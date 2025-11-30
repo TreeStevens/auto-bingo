@@ -1,24 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
 <!-- 
-    NFL BEANO v9.0
-    - FEATURE: ESPN API Integration
-    - FEATURE: Live Game Selection (Lobby)
-    - FEATURE: Real-time Play-by-Play Feed
-    - LOGIC: Manual Marking based on Auto-Feed
-    - REMOVED: Trivia
+    NFL BEANO LIVE v1.0
+    - CORE: Reset to base stable version.
+    - FEED: Both Host and Guest select game in Lobby to ensure feed loads.
+    - SYNC: Improved "Handshake" to ensure Guest gets their card.
 -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NFL BEANO v9.0</title>
+    <title>NFL BEANO LIVE v1.0</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Titan+One&display=swap" rel="stylesheet">
 
     <style>
         :root {
             --bg-color: #0f172a;
-            --card-width: 360px;
+            --card-width: 350px;
         }
 
         * { box-sizing: border-box; }
@@ -68,32 +66,32 @@
         .btn-host { background: #3b82f6; color: white; }
         .btn-join { background: #10b981; color: white; }
 
-        /* --- PLAY FEED (NEW) --- */
+        /* --- PLAY FEED --- */
         #play-feed {
             width: 95%; max-width: 800px;
-            margin: 20px auto 0 auto;
+            margin: 15px auto 0 auto;
             background: #1e293b;
             border: 2px solid #334155;
             border-radius: 12px;
-            height: 150px;
+            height: 120px;
             overflow-y: scroll;
-            display: flex; flex-direction: column-reverse; /* Newest at bottom visually, or logic */
+            display: flex; flex-direction: column-reverse;
             padding: 10px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
         .feed-item {
             border-bottom: 1px solid #334155;
-            padding: 8px;
-            font-size: 0.9rem;
+            padding: 6px;
+            font-size: 0.85rem;
             display: flex; justify-content: space-between; align-items: center;
         }
         .feed-item:last-child { border-bottom: none; }
         .feed-event { 
             color: #fbbf24; font-weight: bold; text-transform: uppercase; 
             background: rgba(251, 191, 36, 0.1); padding: 2px 6px; border-radius: 4px;
-            margin-right: 10px; white-space: nowrap;
+            margin-right: 10px; white-space: nowrap; font-size: 0.75rem;
         }
-        .feed-desc { color: #cbd5e1; font-size: 0.8rem; line-height: 1.2; text-align: left;}
+        .feed-desc { color: #cbd5e1; text-align: left; flex:1; }
 
         /* --- GAME CONTAINER --- */
         #game-board {
@@ -102,7 +100,7 @@
             justify-content: center;
             align-items: flex-start;
             padding: 20px 10px 80px 10px;
-            gap: 40px;
+            gap: 30px;
             width: 100%;
         }
 
@@ -110,51 +108,46 @@
         .player-zone {
             background: #fff;
             border-radius: 20px;
-            padding: 25px;
+            padding: 20px;
             display: flex;
             flex-direction: column;
             align-items: center;
             border: 8px solid #333;
             box-shadow: 0 15px 40px rgba(0,0,0,0.6);
             position: relative;
-            transition: opacity 0.3s ease;
-            margin-bottom: 20px;
-            margin-top: 60px; /* Space for header */
+            margin-top: 50px; /* Space for header popout */
+            transition: transform 0.3s;
         }
         .player-zone.opponent { transform: scale(0.95); opacity: 0.95; }
         
         .player-header {
-            margin-top: -75px;
+            margin-top: -70px;
             display: flex; flex-direction: column; align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             z-index: 10;
         }
         .team-logo {
-            width: 100px; height: 100px;
+            width: 90px; height: 90px;
             background: white; border-radius: 50%;
             border: 5px solid white; object-fit: contain;
             box-shadow: 0 5px 15px rgba(0,0,0,0.2);
             position: relative; z-index: 2;
         }
-        .player-name-wrap {
-            margin-top: -20px;
-            position: relative; z-index: 1;
-            display: flex; flex-direction: column; align-items: center;
-        }
         .player-name {
-            font-family: 'Titan One', cursive; font-size: 2rem;
+            font-family: 'Titan One', cursive; font-size: 1.8rem;
             text-transform: uppercase;
             text-shadow: 2px 2px 0px rgba(0,0,0,0.4);
             color: white;
-            padding: 8px 25px 5px 25px; 
+            padding: 5px 20px; 
             border-radius: 30px;
+            margin-top: -10px;
             border: 4px solid white;
             white-space: nowrap;
-            max-width: 320px; overflow: hidden; text-overflow: ellipsis;
+            max-width: 300px; overflow: hidden; text-overflow: ellipsis;
+            position: relative; z-index: 1;
         }
 
         /* CARDS */
-        .cards-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 25px; max-width: 100%; }
         .single-card-wrap { width: var(--card-width); display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
         
         .bingo-grid-container {
@@ -164,25 +157,19 @@
             border: 3px solid #000;
             box-shadow: 0 4px 10px rgba(0,0,0,0.2);
         }
-        .card-label { text-align: center; padding: 8px; font-weight: 900; color: white; font-size: 1rem; text-transform: uppercase; letter-spacing: 2px; }
+        .card-label { text-align: center; padding: 6px; font-weight: 900; color: white; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 2px; }
         .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; background: #94a3b8; aspect-ratio: 1/1; }
         
         .cell { 
             background: #f8fafc; color: #1e293b; 
             display: flex; align-items: center; justify-content: center; 
-            text-align: center; 
-            font-size: 8px; 
-            padding: 2px;
-            font-weight: 700; 
-            line-height: 1.1; 
-            user-select: none; 
-            word-wrap: break-word; 
-            word-break: break-word;
-            hyphens: auto; 
+            text-align: center; font-size: 8px; padding: 2px;
+            font-weight: 700; line-height: 1.1; 
+            user-select: none; word-wrap: break-word; word-break: break-word;
         }
         
-        .cell.free { background: #1e293b !important; color: #fbbf24 !important; font-size: 12px; font-weight: 900; display: flex; flex-direction: column; justify-content: center; }
-        .cell.free span { font-size: 18px; margin-top:2px; display: block; }
+        .cell.free { background: #1e293b !important; color: #fbbf24 !important; font-size: 10px; font-weight: 900; display: flex; flex-direction: column; justify-content: center; }
+        .cell.free span { font-size: 16px; margin-top:2px; display: block; }
         .cell.marked { background: #fbbf24 !important; color: #000 !important; box-shadow: inset 0 0 10px rgba(0,0,0,0.1); }
         .cell.win { background: #ef4444 !important; color: white !important; animation: pulse 1s infinite; }
         @keyframes pulse { 0%{opacity:1;} 50%{opacity:0.6;} 100%{opacity:1;} }
@@ -203,50 +190,23 @@
         }
         .footer-left { display: flex; align-items: center; gap: 10px; }
         #room-label { color: #333; font-weight: 900; font-size: 1.2rem; font-family: 'Chakra Petch', sans-serif; }
+        .btn-footer { padding: 8px 16px; font-size: 1rem; border-radius: 20px; background: #64748b; color: white; border: none; font-weight: 800; font-family: 'Chakra Petch', sans-serif; cursor: pointer; }
         
-        .btn-footer { 
-            padding: 8px 16px; 
-            font-size: 1rem; 
-            border-radius: 20px; 
-            width: auto; 
-            margin: 0; 
-            background: #64748b; 
-            color: white; 
-            border: none; 
-            font-weight: 800;
-            font-family: 'Chakra Petch', sans-serif;
-            text-shadow: none;
-            cursor: pointer;
-        }
-        
-        /* MODALS */
-        .modal-overlay {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 7000;
-            display: none; justify-content: center; align-items: center;
-        }
-        .modal-content {
-            background: white; padding: 30px; border-radius: 20px; width: 90%; max-width: 500px;
-            text-align: center; color: #333; border: 5px solid #fff;
-            max-height: 80vh; overflow-y: auto;
-        }
-
-        /* WINNER */
-        #winner-modal { display:none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; padding: 40px; border-radius: 30px; box-shadow: 0 0 100px rgba(251, 191, 36, 0.8); text-align: center; z-index: 9000; border: 10px solid #fbbf24; animation: popIn 0.5s; }
-        @keyframes popIn { from{transform:translate(-50%, -50%) scale(0.1);} to{transform:translate(-50%, -50%) scale(1);} }
-        #winner-text { font-family: 'Titan One'; font-size: 3rem; color: #0f172a; margin: 20px 0; }
-
-        /* INFO LIST */
-        .tier-list { text-align: left; margin-bottom: 15px; }
-        .tier-head { font-weight: bold; padding: 5px; color: white; border-radius: 5px; margin-bottom: 5px; display: flex; justify-content: space-between; }
-        .tier-items { font-size: 0.85rem; line-height: 1.4; color: #555; padding-left: 5px; }
-
-        #celebration { position: fixed; inset: 0; pointer-events: none; z-index: 5000; overflow: hidden; }
-        .football { position: absolute; font-size: 5rem; animation: spinFly 3s linear infinite; }
-        @keyframes spinFly { from { transform: translate(-100px, 100vh) rotate(0deg); } to { transform: translate(120vw, -200px) rotate(720deg); } }
-
+        /* MODALS & UTILS */
         .hidden { display: none !important; }
         .waiting-msg { width: 100%; text-align: center; margin-top: 100px; font-size: 1.5rem; opacity: 0.5; animation: pulse 2s infinite; }
         #error-banner { position: fixed; top:0; left:0; width:100%; background:red; color:white; text-align: center; padding: 10px; z-index: 10000; display: none; font-size: 0.8rem;}
+        #info-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 7000; display: none; justify-content: center; align-items: center; }
+        .modal-content { background: white; padding: 30px; border-radius: 20px; width: 90%; max-width: 500px; text-align: center; color: #333; border: 5px solid #fff; max-height: 80vh; overflow-y: auto; }
+        .tier-list { text-align: left; margin-bottom: 15px; }
+        .tier-head { font-weight: bold; padding: 5px; color: white; border-radius: 5px; margin-bottom: 5px; display: flex; justify-content: space-between; }
+        .tier-items { font-size: 0.85rem; line-height: 1.4; color: #555; padding-left: 5px; }
+        #winner-modal { display:none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; padding: 40px; border-radius: 30px; box-shadow: 0 0 100px rgba(251, 191, 36, 0.8); text-align: center; z-index: 9000; border: 10px solid #fbbf24; animation: popIn 0.5s; }
+        @keyframes popIn { from{transform:translate(-50%, -50%) scale(0.1);} to{transform:translate(-50%, -50%) scale(1);} }
+        #winner-text { font-family: 'Titan One'; font-size: 3rem; color: #0f172a; margin: 20px 0; }
+        #celebration { position: fixed; inset: 0; pointer-events: none; z-index: 5000; overflow: hidden; }
+        .football { position: absolute; font-size: 5rem; animation: spinFly 3s linear infinite; }
+        @keyframes spinFly { from { transform: translate(-100px, 100vh) rotate(0deg); } to { transform: translate(120vw, -200px) rotate(720deg); } }
 
     </style>
 </head>
@@ -254,28 +214,24 @@
 
     <div id="error-banner"></div>
 
-    <!-- WINNER MODAL -->
     <div id="winner-modal">
         <span style="color:#ef4444; font-size:1.5rem; font-weight:bold;">BEANO!</span>
         <div id="winner-text"></div>
         <button onclick="document.getElementById('winner-modal').style.display='none'" style="background:#333; color:white; font-size:1rem; padding:10px; border:none; border-radius:5px; cursor:pointer;">CLOSE</button>
     </div>
 
-    <!-- INFO MODAL -->
-    <div id="info-modal" class="modal-overlay">
+    <div id="info-modal">
         <div class="modal-content">
             <h2>CARD INTEL</h2>
-            <p style="font-size:0.9rem; margin-bottom:20px;">Each card is generated using these probabilities to keep things fair and fun.</p>
             <div id="info-list"></div>
             <button onclick="document.getElementById('info-modal').style.display='none'" style="width:100%; background:#333; color:white; padding:15px; border:none; border-radius:10px; margin-top:10px; cursor:pointer;">CLOSE</button>
         </div>
     </div>
 
-    <!-- LOBBY -->
     <div id="lobby">
         <div class="lobby-card">
             <h1>NFL BEANO</h1>
-            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 9.0 &bull; LIVE FEED</p>
+            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">LIVE v1.0 &bull; SELECT GAME</p>
 
             <div class="control-group">
                 <label>Your Name</label>
@@ -288,11 +244,10 @@
             </div>
             
             <div class="control-group">
-                <label>Select Your Game to Watch</label>
+                <label>Select Game To Watch</label>
                 <select id="game-selector">
                     <option value="" disabled selected>Loading games...</option>
                 </select>
-                <div id="game-loading" style="font-size:0.7rem; color:#666; display:none;">Fetching schedule...</div>
             </div>
 
             <div style="display:flex; gap:15px;">
@@ -304,7 +259,6 @@
                         <option value="3">3</option>
                     </select>
                 </div>
-                
                 <div class="control-group" style="flex:2">
                      <label>Room Code</label>
                      <input type="text" id="room-input" placeholder="HOST CREATES" style="text-transform:uppercase;">
@@ -319,13 +273,11 @@
     </div>
 
     <div id="play-feed" class="hidden">
-        <div style="text-align:center; color:#666; font-size:0.8rem; padding:10px;">Waiting for next play...</div>
+        <div style="text-align:center; color:#666; font-size:0.8rem; padding:10px;">Play Feed Initializing...</div>
     </div>
 
-    <!-- GAME BOARD -->
     <div id="game-board"></div>
 
-    <!-- CONTROLS -->
     <div id="footer-controls" class="hidden">
         <div class="footer-left">
             <span id="room-label"></span>
@@ -341,79 +293,16 @@
     <div id="celebration"></div>
 
 <script>
-    // --- DATA ---
+    // --- CONFIG ---
     const TIERS = {
-        common: {
-            label: "COMMON (12 per card)", color: "#10b981",
-            items: [
-                "TOUCHDOWN", "FIELD GOAL", "FIRST DOWN", "PASS > 20 YDS", 
-                "RUN > 10 YDS", "3RD & LONG", "PLAY ACTION", "SHOTGUN", 
-                "SACK", "PASS DEFENDED", "THROWN AWAY", "3-AND-OUT", 
-                "PENALTY FLAG", "HOLDING", "FALSE START", "TIMEOUT", 
-                "2-MIN WARNING", "INJURY"
-            ]
-        },
-        uncommon: {
-            label: "UNCOMMON (8 per card)", color: "#f59e0b",
-            items: [
-                "2-PT CONV", "QB SCRAMBLE", "4TH DOWN TRY", "SCREEN > 10", 
-                "QB SNEAK", "EMPTY BACKFIELD", "TFL", "TIPPED PASS", 
-                "INTERCEPTION", "FUMBLE", "TURNOVER", "GOAL LINE STAND", 
-                "RED ZONE STOP", "PASS INT", "DELAY OF GAME", "INT GROUNDING", 
-                "ROUGHING PASSER", "FACE MASK", "CHALLENGE FLAG", "MEASUREMENT"
-            ]
-        },
-        rare: {
-            label: "RARE (4 per card)", color: "#ef4444",
-            items: [
-                "HAIL MARY", "TRICK PLAY", "FAKE PUNT", "DEFENSIVE TD", 
-                "BLOCKED KICK", "OVERTIME", "COACH YELLING", "MASCOT", 
-                "BLIMP SHOT", "FACE PAINT", "SHIRTLESS FAN", "TRUCK AD", 
-                "BEER AD", "HELMET THROW", "CHEERLEADER", "CELEBRITY", 
-                "HURDLE", "JUKE", "ONE-HANDED CATCH"
-            ]
-        }
+        common: { label: "COMMON (12)", color: "#10b981", items: ["TOUCHDOWN", "FIELD GOAL", "FIRST DOWN", "PASS > 20 YDS", "RUN > 10 YDS", "3RD & LONG", "PLAY ACTION", "SHOTGUN", "SACK", "PASS DEFENDED", "THROWN AWAY", "3-AND-OUT", "PENALTY FLAG", "HOLDING", "FALSE START", "TIMEOUT", "2-MIN WARNING", "INJURY"] },
+        uncommon: { label: "UNCOMMON (8)", color: "#f59e0b", items: ["2-PT CONV", "QB SCRAMBLE", "4TH DOWN TRY", "SCREEN > 10", "QB SNEAK", "EMPTY BACKFIELD", "TFL", "TIPPED PASS", "INTERCEPTION", "FUMBLE", "TURNOVER", "GOAL LINE STAND", "RED ZONE STOP", "PASS INT", "DELAY OF GAME", "INT GROUNDING", "ROUGHING PASSER", "FACE MASK", "CHALLENGE FLAG", "MEASUREMENT"] },
+        rare: { label: "RARE (4)", color: "#ef4444", items: ["HAIL MARY", "TRICK PLAY", "FAKE PUNT", "DEFENSIVE TD", "BLOCKED KICK", "OVERTIME", "COACH YELLING", "MASCOT", "BLIMP SHOT", "FACE PAINT", "SHIRTLESS FAN", "TRUCK AD", "BEER AD", "HELMET THROW", "CHEERLEADER", "CELEBRITY", "HURDLE", "JUKE", "ONE-HANDED CATCH"] }
     };
-
-    const TEAMS = {
-        "None": { n: "No Team Selected", c: "#333333", l: "nfl.svg" },
-        "ARI": { n: "Arizona Cardinals", c: "#97233F", l: "arizona-cardinals.svg" },
-        "ATL": { n: "Atlanta Falcons", c: "#A71930", l: "atlanta-falcons.svg" },
-        "BAL": { n: "Baltimore Ravens", c: "#241773", l: "baltimore-ravens.svg" },
-        "BUF": { n: "Buffalo Bills", c: "#00338D", l: "buffalo-bills.svg" },
-        "CAR": { n: "Carolina Panthers", c: "#0085CA", l: "carolina-panthers.svg" },
-        "CHI": { n: "Chicago Bears", c: "#0B162A", l: "chicago-bears.svg" },
-        "CIN": { n: "Cincinnati Bengals", c: "#FB4F14", l: "cincinnati-bengals.svg" },
-        "CLE": { n: "Cleveland Browns", c: "#311D00", l: "cleveland-browns.svg" },
-        "DAL": { n: "Dallas Cowboys", c: "#003594", l: "dallas-cowboys.svg" },
-        "DEN": { n: "Denver Broncos", c: "#FB4F14", l: "denver-broncos.svg" },
-        "DET": { n: "Detroit Lions", c: "#0076B6", l: "detroit-lions.svg" },
-        "GB":  { n: "Green Bay Packers", c: "#203731", l: "green-bay-packers.svg" },
-        "HOU": { n: "Houston Texans", c: "#03202F", l: "houston-texans.svg" },
-        "IND": { n: "Indianapolis Colts", c: "#002C5F", l: "indianapolis-colts.svg" },
-        "JAX": { n: "Jacksonville Jaguars", c: "#006778", l: "jacksonville-jaguars.svg" },
-        "KC":  { n: "Kansas City Chiefs", c: "#E31837", l: "kansas-city-chiefs.svg" },
-        "LV":  { n: "Las Vegas Raiders", c: "#000000", l: "oakland-raiders.svg" },
-        "LAC": { n: "Los Angeles Chargers", c: "#0080C6", l: "los-angeles-chargers.svg" },
-        "LAR": { n: "Los Angeles Rams", c: "#003594", l: "los-angeles-rams.svg" },
-        "MIA": { n: "Miami Dolphins", c: "#008E97", l: "miami-dolphins.svg" },
-        "MIN": { n: "Minnesota Vikings", c: "#4F2683", l: "minnesota-vikings.svg" },
-        "NE":  { n: "New England Patriots", c: "#002244", l: "new-england-patriots.svg" },
-        "NO":  { n: "New Orleans Saints", c: "#D3BC8D", l: "new-orleans-saints.svg" },
-        "NYG": { n: "New York Giants", c: "#0B2265", l: "new-york-giants.svg" },
-        "NYJ": { n: "New York Jets", c: "#125740", l: "new-york-jets.svg" },
-        "PHI": { n: "Philadelphia Eagles", c: "#004C54", l: "philadelphia-eagles.svg" },
-        "PIT": { n: "Pittsburgh Steelers", c: "#FFB612", l: "pittsburgh-steelers.svg" },
-        "SF":  { n: "San Francisco 49ers", c: "#AA0000", l: "san-francisco-49ers.svg" },
-        "SEA": { n: "Seattle Seahawks", c: "#002244", l: "seattle-seahawks.svg" },
-        "TB":  { n: "Tampa Bay Buccaneers", c: "#D50A0A", l: "tampa-bay-buccaneers.svg" },
-        "TEN": { n: "Tennessee Titans", c: "#0C2340", l: "tennessee-titans.svg" },
-        "WAS": { n: "Washington Commanders", c: "#5A1414", l: "washington-commanders.svg" }
-    };
-
+    const TEAMS = { "None": { n: "No Team", c: "#333", l: "nfl.svg" }, "ARI": { n: "Cardinals", c: "#97233F", l: "arizona-cardinals.svg" }, "ATL": { n: "Falcons", c: "#A71930", l: "atlanta-falcons.svg" }, "BAL": { n: "Ravens", c: "#241773", l: "baltimore-ravens.svg" }, "BUF": { n: "Bills", c: "#00338D", l: "buffalo-bills.svg" }, "CAR": { n: "Panthers", c: "#0085CA", l: "carolina-panthers.svg" }, "CHI": { n: "Bears", c: "#0B162A", l: "chicago-bears.svg" }, "CIN": { n: "Bengals", c: "#FB4F14", l: "cincinnati-bengals.svg" }, "CLE": { n: "Browns", c: "#311D00", l: "cleveland-browns.svg" }, "DAL": { n: "Cowboys", c: "#003594", l: "dallas-cowboys.svg" }, "DEN": { n: "Broncos", c: "#FB4F14", l: "denver-broncos.svg" }, "DET": { n: "Lions", c: "#0076B6", l: "detroit-lions.svg" }, "GB": { n: "Packers", c: "#203731", l: "green-bay-packers.svg" }, "HOU": { n: "Texans", c: "#03202F", l: "houston-texans.svg" }, "IND": { n: "Colts", c: "#002C5F", l: "indianapolis-colts.svg" }, "JAX": { n: "Jaguars", c: "#006778", l: "jacksonville-jaguars.svg" }, "KC": { n: "Chiefs", c: "#E31837", l: "kansas-city-chiefs.svg" }, "LV": { n: "Raiders", c: "#000", l: "oakland-raiders.svg" }, "LAC": { n: "Chargers", c: "#0080C6", l: "los-angeles-chargers.svg" }, "LAR": { n: "Rams", c: "#003594", l: "los-angeles-rams.svg" }, "MIA": { n: "Dolphins", c: "#008E97", l: "miami-dolphins.svg" }, "MIN": { n: "Vikings", c: "#4F2683", l: "minnesota-vikings.svg" }, "NE": { n: "Patriots", c: "#002244", l: "new-england-patriots.svg" }, "NO": { n: "Saints", c: "#D3BC8D", l: "new-orleans-saints.svg" }, "NYG": { n: "Giants", c: "#0B2265", l: "new-york-giants.svg" }, "NYJ": { n: "Jets", c: "#125740", l: "new-york-jets.svg" }, "PHI": { n: "Eagles", c: "#004C54", l: "philadelphia-eagles.svg" }, "PIT": { n: "Steelers", c: "#FFB612", l: "pittsburgh-steelers.svg" }, "SF": { n: "49ers", c: "#AA0000", l: "san-francisco-49ers.svg" }, "SEA": { n: "Seahawks", c: "#002244", l: "seattle-seahawks.svg" }, "TB": { n: "Buccaneers", c: "#D50A0A", l: "tampa-bay-buccaneers.svg" }, "TEN": { n: "Titans", c: "#0C2340", l: "tennessee-titans.svg" }, "WAS": { n: "Commanders", c: "#5A1414", l: "washington-commanders.svg" } };
     const WINS = [[0,1,2,3,4],[5,6,7,8,9],[10,11,12,13,14],[15,16,17,18,19],[20,21,22,23,24],[0,5,10,15,20],[1,6,11,16,21],[2,7,12,17,22],[3,8,13,18,23],[4,9,14,19,24],[0,6,12,18,24],[4,8,12,16,20]];
     const BROKER = 'wss://broker.emqx.io:8084/mqtt';
-    const TOPIC_PRE = 'nfl_beano_v9_0';
+    const TOPIC_PRE = 'nfl_beano_live_v1';
 
     // --- STATE ---
     let client, myId = 'p' + Math.random().toString(36).substr(2,6);
@@ -421,169 +310,53 @@
     let focusMode = false;
     let currentWinnerName = null;
     let gameState = { players: {} };
-    let myGameId = null; // API Game ID
-    let lastPlayId = null; // To prevent duplicates in feed
+    let myGameId = null; 
+    let lastPlayId = null;
 
     // --- INIT ---
     document.addEventListener('DOMContentLoaded', () => {
         const ls = document.getElementById('lobby-team');
         const is_sel = document.getElementById('ingame-team');
-        const sortedKeys = Object.keys(TEAMS).sort((a,b)=>(TEAMS[a].n<TEAMS[b].n?-1:1));
-        sortedKeys.forEach(t => {
+        Object.keys(TEAMS).sort((a,b)=>(TEAMS[a].n<TEAMS[b].n?-1:1)).forEach(t => {
             ls.innerHTML += `<option value="${t}">${TEAMS[t].n}</option>`;
             if(t!=="None") is_sel.innerHTML += `<option value="${t}">${TEAMS[t].n}</option>`;
         });
-        
-        // FETCH GAMES
         fetchGamesList();
     });
 
-    // --- API SECTION ---
     async function fetchGamesList() {
         const sel = document.getElementById('game-selector');
-        const loader = document.getElementById('game-loading');
-        loader.style.display = 'block';
-        
         try {
             const resp = await fetch('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard');
             const data = await resp.json();
-            
             sel.innerHTML = "";
-            let gamesFound = false;
-            
+            let games = false;
             data.events.forEach(e => {
-                const gameId = e.id;
-                const name = e.name; // e.g. "BUF vs KC"
-                const status = e.status.type.state; // pre, in, post
-                // We show all games, but emphasize live ones
-                sel.innerHTML += `<option value="${gameId}">${name} (${status})</option>`;
-                gamesFound = true;
+                sel.innerHTML += `<option value="${e.id}">${e.name} (${e.status.type.state})</option>`;
+                games = true;
             });
-            
-            if(!gamesFound) sel.innerHTML = "<option>No Games Today</option>";
-        } catch(e) {
-            sel.innerHTML = "<option>Error loading games</option>";
-        } finally {
-            loader.style.display = 'none';
-        }
+            if(!games) sel.innerHTML = "<option>No Games Available</option>";
+        } catch(e) { sel.innerHTML = "<option>Error loading games</option>"; }
     }
 
-    // FEED POLOING LOOP
-    function startPlayFeed() {
-        if(!myGameId) return;
-        const feed = document.getElementById('play-feed');
-        feed.innerHTML = ""; // Clear
-        
-        // Initial Poll
-        pollGame();
-        
-        // Loop every 15s
-        setInterval(pollGame, 15000);
-    }
-
-    async function pollGame() {
-        if(!myGameId) return;
-        try {
-            const url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${myGameId}`;
-            const resp = await fetch(url);
-            const data = await resp.json();
-            
-            // Get Drives or Play list
-            // ESPN Summary API usually has 'drives' -> 'plays'
-            // We just want the very last play of the last drive.
-            
-            if(data.drives && data.drives.current) {
-                const currentDrive = data.drives.current;
-                if(currentDrive.plays && currentDrive.plays.length > 0) {
-                    const lastPlay = currentDrive.plays[currentDrive.plays.length - 1];
-                    
-                    if(lastPlay.id !== lastPlayId) {
-                        lastPlayId = lastPlay.id;
-                        processPlay(lastPlay.text, lastPlay.type ? lastPlay.type.text : "");
-                    }
-                }
-            } else if (data.plays && data.plays.length > 0) {
-                // Fallback for some states
-                 const lastPlay = data.plays[data.plays.length - 1];
-                 if(lastPlay.id !== lastPlayId) {
-                    lastPlayId = lastPlay.id;
-                    processPlay(lastPlay.text, "");
-                 }
-            }
-        } catch(e) {
-            console.log("API Poll Error", e);
-        }
-    }
-
-    function processPlay(text, typeStr) {
-        // This is the Brain. Converts Text to Events.
-        const up = text.toUpperCase();
-        const typeUp = typeStr.toUpperCase();
-        let events = [];
-
-        // Simple Mapping Logic
-        if(up.includes("TOUCHDOWN")) events.push("TOUCHDOWN");
-        if(up.includes("FIELD GOAL") && !up.includes("NO GOOD") && !up.includes("MISSED")) events.push("FIELD GOAL");
-        if(up.includes("MISSED") || up.includes("NO GOOD")) events.push("MISSED FG");
-        if(up.includes("PUNT")) events.push("PUNT");
-        if(up.includes("SACK")) events.push("SACK");
-        if(up.includes("INTERCEPT") || typeUp.includes("INTERCEPT")) events.push("INTERCEPTION");
-        if(up.includes("FUMBLE")) events.push("FUMBLE");
-        if(up.includes("TIMEOUT")) events.push("TIMEOUT");
-        if(up.includes("PENALTY")) events.push("PENALTY FLAG");
-        if(up.includes("INJURY")) events.push("INJURY");
-        
-        // Regex for distances
-        const distMatch = up.match(/(\d+) (YD|YARD|YDS)/);
-        if(distMatch) {
-            const yds = parseInt(distMatch[1]);
-            if(yds >= 5) events.push("RUN > 10 YDS"); // Simplified logic: user must verify run vs pass
-            if(yds >= 20) events.push("PASS > 20 YDS");
-            if(yds >= 10) events.push("FIRST DOWN"); // Probabilistic
-        }
-
-        if(events.length > 0) {
-            addToFeed(events, text);
-        }
-    }
-
-    function addToFeed(events, text) {
-        const feed = document.getElementById('play-feed');
-        const div = document.createElement('div');
-        div.className = 'feed-item';
-        div.innerHTML = `
-            <div style="display:flex; align-items:center;">
-                ${events.map(e => `<span class="feed-event">${e}</span>`).join('')}
-                <span class="feed-desc">${text}</span>
-            </div>
-        `;
-        feed.prepend(div); // Add to top
-    }
-
-
-    // --- GAME LOGIC ---
     function initGame(host) {
-        const nameInput = document.getElementById('username').value.trim();
-        const gSel = document.getElementById('game-selector');
-        
-        myName = nameInput || (host?"HOST":"GUEST");
+        myName = document.getElementById('username').value.trim() || (host?"HOST":"GUEST");
         myTeam = document.getElementById('lobby-team').value;
-        myGameId = gSel.value; // GET CHOSEN GAME
+        myGameId = document.getElementById('game-selector').value;
         isHost = host;
         
         if(!myGameId) return alert("Please select a game to watch.");
 
-        if(host) roomCode = Math.random().toString(36).substr(2,4).toUpperCase();
-        else {
+        if(host) {
+            roomCode = Math.random().toString(36).substr(2,4).toUpperCase();
+            // Host creates own data immediately
+            gameState.players[myId] = createPlayerData(myName, myTeam, parseInt(document.getElementById('card-count').value));
+        } else {
             roomCode = document.getElementById('room-input').value.trim().toUpperCase();
             if(roomCode.length !== 4) return alert("Enter 4-letter Code");
         }
 
-        if(host) {
-            const cnt = parseInt(document.getElementById('card-count').value);
-            gameState.players[myId] = createPlayerData(myName, myTeam, cnt);
-        }
-
+        // UI Switch
         document.getElementById('lobby').classList.add('hidden');
         document.getElementById('play-feed').classList.remove('hidden');
         document.getElementById('footer-controls').classList.remove('hidden');
@@ -593,9 +366,10 @@
         
         render(); 
         connectMQTT();
-        startPlayFeed(); // Start Local Polling
+        startPlayFeed();
     }
 
+    // --- GAME LOGIC ---
     function createPlayerData(name, team, count) {
         let p = { name: name, team: team, cards: [] };
         for(let i=0; i<count; i++) p.cards.push(newCard());
@@ -604,142 +378,71 @@
 
     function newCard() {
         const shuf = (arr) => [...arr].sort(()=>Math.random()-0.5);
-        const cList = shuf(TIERS.common.items).slice(0, 12);
-        const uList = shuf(TIERS.uncommon.items).slice(0, 8);
-        const rList = shuf(TIERS.rare.items).slice(0, 4);
-        let pool = shuf([...cList, ...uList, ...rList]);
+        const pool = shuf([...shuf(TIERS.common.items).slice(0,12), ...shuf(TIERS.uncommon.items).slice(0,8), ...shuf(TIERS.rare.items).slice(0,4)]);
         pool.splice(12, 0, "FREE");
         return { events: pool, marked: [12], winLine: [], rerolls: 2 };
     }
 
-    function updateTeam() {
-        myTeam = document.getElementById('ingame-team').value;
-        if(gameState.players[myId]) {
-            gameState.players[myId].team = myTeam;
-            send({ type:'UPDATE_TEAM', team: myTeam });
-            render();
-        }
+    function startPlayFeed() {
+        if(!myGameId) return;
+        const feed = document.getElementById('play-feed');
+        feed.innerHTML = "";
+        pollGame();
+        setInterval(pollGame, 15000);
     }
 
-    function toggleFocusMode() {
-        focusMode = !focusMode;
-        document.getElementById('toggle-view-btn').innerText = focusMode ? "SHOW OTHERS" : "HIDE OTHERS";
-        render();
-    }
-
-    function checkWin(c) {
-        for(let l of WINS) if(l.every(idx => c.marked.includes(idx))) return l;
-        return [];
-    }
-
-    function reroll(pIdx, cIdx) {
-        if(pIdx !== myId) return;
-        let p = gameState.players[myId];
-        let c = p.cards[cIdx];
-        if(c.rerolls > 0) {
-            if(confirm("Use 1 Reroll?")) {
-                c.rerolls--;
-                let nc = newCard();
-                c.events = nc.events;
-                c.marked = [12];
-                c.winLine = [];
-                render();
-                send({ type:'UPDATE', pData: p });
-            }
-        }
-    }
-
-    function showInfo() {
-        const d = document.getElementById('info-list');
-        let h = "";
-        for(let k in TIERS) {
-            let t = TIERS[k];
-            h += `<div class="tier-list"><div class="tier-head" style="background:${t.color}"><span>${t.label}</span></div><div class="tier-items">${t.items.join(", ")}</div></div>`;
-        }
-        d.innerHTML = h;
-        document.getElementById('info-modal').style.display = 'flex';
-    }
-
-    // --- RENDER ---
-    function render() {
-        const board = document.getElementById('game-board');
-        const pIds = Object.keys(gameState.players);
-        pIds.sort((a,b) => (a===myId ? -1 : 1));
-
-        if(gameState.players[myId]) {
-            const t = TEAMS[gameState.players[myId].team];
-            document.body.style.backgroundColor = t ? t.c : "#0f172a";
-        }
-
-        let html = "";
-        pIds.forEach(pid => {
-            const isMe = (pid === myId);
-            if(focusMode && !isMe) return;
-
-            const p = gameState.players[pid];
-            const tData = TEAMS[p.team] || TEAMS["None"];
-            const isWinner = p.cards.some(c => c.winLine.length > 0);
+    async function pollGame() {
+        try {
+            const resp = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${myGameId}`);
+            const data = await resp.json();
             
-            let cardsHtml = "";
-            p.cards.forEach((c, cIdx) => {
-                let cellsHtml = "";
-                c.events.forEach((evt, idx) => {
-                    let classes = "cell";
-                    if(idx===12) classes += " free";
-                    if(c.marked.includes(idx)) classes += " marked";
-                    if(c.winLine.includes(idx)) classes += " win";
-                    
-                    let clickAttr = isMe ? `onclick="cellClick('${pid}', ${cIdx}, ${idx})"` : "";
-                    cellsHtml += `<div class="${classes}" ${clickAttr}>${idx===12 ? 'FREE<br><span>🏈</span>' : evt}</div>`;
-                });
+            // Try to find the latest play from current drive or plays array
+            let lastPlay = null;
+            if(data.drives && data.drives.current && data.drives.current.plays && data.drives.current.plays.length > 0) {
+                lastPlay = data.drives.current.plays[data.drives.current.plays.length - 1];
+            } else if (data.plays && data.plays.length > 0) {
+                lastPlay = data.plays[data.plays.length - 1];
+            }
 
-                let rrBtn = "";
-                if(isMe) {
-                    let dis = c.rerolls <= 0 ? "disabled" : "";
-                    rrBtn = `<button class="btn-reroll" ${dis} onclick="reroll('${pid}', ${cIdx})">USE</button>`;
-                }
-
-                cardsHtml += `
-                    <div class="single-card-wrap">
-                        <div class="bingo-grid-container" style="border-color:${tData.c}">
-                            <div class="card-label" style="background:${tData.c}">CARD ${cIdx+1}</div>
-                            <div class="grid">${cellsHtml}</div>
-                        </div>
-                        <div class="reroll-row" style="border-color:${tData.c}">
-                            <span>REROLLS: ${c.rerolls}</span>
-                            ${rrBtn}
-                        </div>
-                    </div>
-                `;
-            });
-
-            html += `
-                <div class="player-zone ${isWinner ? 'winner' : ''} ${!isMe ? 'opponent' : 'is-me'}" style="border-color:${tData.c}">
-                    <div class="player-header">
-                        <img class="team-logo" src="logos/${tData.l}" style="border-color:${tData.c}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iIzMzMyIvPjwvc3ZnPg=='">
-                        <div class="player-name-wrap">
-                            <div class="player-name" style="background:${tData.c}">${p.name}</div>
-                        </div>
-                    </div>
-                    <div class="cards-row">${cardsHtml}</div>
-                </div>
-            `;
-        });
-        board.innerHTML = html;
+            if(lastPlay && lastPlay.id !== lastPlayId) {
+                lastPlayId = lastPlay.id;
+                processPlay(lastPlay.text, lastPlay.type ? lastPlay.type.text : "");
+            }
+        } catch(e) { console.log("Feed Error", e); }
     }
 
-    window.cellClick = function(pId, cIdx, cellIdx) {
-        if(pId !== myId || cellIdx === 12) return;
-        let p = gameState.players[myId];
-        let c = p.cards[cIdx];
-        if(c.marked.includes(cellIdx)) c.marked = c.marked.filter(x => x!==cellIdx);
-        else c.marked.push(cellIdx);
-        c.winLine = checkWin(c);
-        if(c.winLine.length > 0) announceWin(p.name);
-        render();
-        send({ type: 'UPDATE', pData: p });
-    };
+    function processPlay(text, typeStr) {
+        const up = text.toUpperCase();
+        const typeUp = typeStr.toUpperCase();
+        let events = [];
 
+        if(up.includes("TOUCHDOWN")) events.push("TOUCHDOWN");
+        if(up.includes("FIELD GOAL") && !up.includes("NO GOOD") && !up.includes("MISSED")) events.push("FIELD GOAL");
+        if(up.includes("PUNT")) events.push("PUNT");
+        if(up.includes("SACK")) events.push("SACK");
+        if(up.includes("INTERCEPT") || typeUp.includes("INTERCEPT")) events.push("INTERCEPTION");
+        if(up.includes("FUMBLE")) events.push("FUMBLE");
+        if(up.includes("TIMEOUT")) events.push("TIMEOUT");
+        if(up.includes("PENALTY")) events.push("PENALTY FLAG");
+        
+        const distMatch = up.match(/(\d+) (YD|YARD|YDS)/);
+        if(distMatch) {
+            const yds = parseInt(distMatch[1]);
+            if(yds >= 5) events.push("RUN > 10 YDS");
+            if(yds >= 20) events.push("PASS > 20 YDS");
+            if(yds >= 10) events.push("FIRST DOWN");
+        }
+
+        if(events.length > 0) {
+            const feed = document.getElementById('play-feed');
+            const div = document.createElement('div');
+            div.className = 'feed-item';
+            div.innerHTML = `<div style="display:flex; align-items:center;">${events.map(e => `<span class="feed-event">${e}</span>`).join('')}<span class="feed-desc">${text}</span></div>`;
+            feed.prepend(div);
+        }
+    }
+
+    // --- MQTT & SYNC ---
     function connectMQTT() {
         client = mqtt.connect(BROKER);
         const t = `${TOPIC_PRE}/${roomCode}`;
@@ -747,12 +450,17 @@
         client.on('connect', () => {
             client.subscribe(t);
             if(isHost) {
+                // Host broadcasts state every 2s
                 setInterval(() => send({ type: 'STATE', state: gameState }), 2000);
             } else {
+                // GUEST: Annoy the host until I am in the state
                 const cnt = parseInt(document.getElementById('card-count').value);
-                let iv = setInterval(() => {
-                    if(gameState.players[myId]) clearInterval(iv);
-                    else send({ type: 'JOIN', name: myName, team: myTeam, count: cnt });
+                let checkInt = setInterval(() => {
+                    if(gameState.players[myId]) {
+                        clearInterval(checkInt); // I'm in!
+                    } else {
+                        send({ type: 'JOIN', name: myName, team: myTeam, count: cnt });
+                    }
                 }, 1500);
             }
         });
@@ -770,81 +478,173 @@
                     }
                     if(msg.type === 'UPDATE') {
                         gameState.players[msg.sender] = msg.pData;
-                        checkForWins();
+                        checkGlobalWin();
                         render();
-                        send({ type: 'STATE', state: gameState });
+                        send({ type: 'STATE', state: gameState }); // Broadcast update immediately
                     }
                     if(msg.type === 'UPDATE_TEAM' && gameState.players[msg.sender]) {
                         gameState.players[msg.sender].team = msg.team;
                         render();
                     }
                 } else {
-                    if(msg.type === 'STATE') handleServerState(msg.state);
+                    if(msg.type === 'STATE') {
+                        let local = gameState.players[myId];
+                        gameState = msg.state;
+                        // Preserve local clicks to prevent lag/overwrite before host syncs
+                        if(local && gameState.players[myId]) {
+                            // Only overwrite if it looks like a full reset (events changed)
+                            if(JSON.stringify(local.cards[0].events) === JSON.stringify(gameState.players[myId].cards[0].events)) {
+                                gameState.players[myId] = local;
+                            }
+                        }
+                        checkGlobalWin();
+                        render();
+                    }
                 }
             } catch(e) { console.log(e); }
         });
     }
 
-    function handleServerState(serverState) {
-        const localMe = gameState.players[myId];
-        const serverMe = serverState.players[myId];
-        gameState = serverState; 
-        if(localMe && serverMe) {
-            const sameGame = JSON.stringify(localMe.cards.map(c=>c.events)) === JSON.stringify(serverMe.cards.map(c=>c.events));
-            if(sameGame) gameState.players[myId] = localMe;
-            else gameState.players[myId] = serverMe;
-        }
-        checkForWins();
-        render();
-    }
-
-    function checkForWins() {
+    function checkGlobalWin() {
         let winnerFound = null;
         Object.values(gameState.players).forEach(p => {
-            if(p.cards.some(c => c.winLine.length > 0)) {
-                winnerFound = p.name;
-            }
+            if(p.cards.some(c => c.winLine.length > 0)) winnerFound = p.name;
         });
-        if(winnerFound && currentWinnerName !== winnerFound) announceWin(winnerFound);
-        else if (!winnerFound) currentWinnerName = null;
+        if(winnerFound && currentWinnerName !== winnerFound) {
+            currentWinnerName = winnerFound;
+            document.getElementById('winner-text').innerText = winnerFound + " WINS!";
+            document.getElementById('winner-modal').style.display = 'block';
+            celebrate();
+        } else if (!winnerFound) {
+            currentWinnerName = null; // Reset
+        }
     }
 
-    function announceWin(name) {
-        currentWinnerName = name;
-        document.getElementById('winner-text').innerText = name + " WINS!";
-        document.getElementById('winner-modal').style.display = 'block';
-        celebrate();
+    function send(pl) { pl.sender = myId; if(client) client.publish(`${TOPIC_PRE}/${roomCode}`, JSON.stringify(pl)); }
+
+    // --- RENDER & INTERACTION ---
+    function render() {
+        const board = document.getElementById('game-board');
+        const pIds = Object.keys(gameState.players);
+        
+        // Waiting state for Guest
+        if(pIds.length === 0 || (!isHost && !gameState.players[myId])) {
+            board.innerHTML = "<div class='waiting-msg'>Connecting to Host...<br>Wait for them to let you in!</div>";
+            return;
+        }
+
+        pIds.sort((a,b) => (a===myId ? -1 : 1));
+        
+        // Background color
+        if(gameState.players[myId]) {
+            const t = TEAMS[gameState.players[myId].team];
+            document.body.style.backgroundColor = t ? t.c : "#0f172a";
+        }
+
+        let html = "";
+        pIds.forEach(pid => {
+            if(focusMode && pid !== myId) return;
+            const p = gameState.players[pid];
+            const tData = TEAMS[p.team] || TEAMS["None"];
+            const isMe = (pid === myId);
+            const isWinner = p.cards.some(c => c.winLine.length > 0);
+
+            let cardsHtml = "";
+            p.cards.forEach((c, cIdx) => {
+                let cellsHtml = "";
+                c.events.forEach((evt, idx) => {
+                    let classes = "cell" + (idx===12 ? " free" : "") + (c.marked.includes(idx) ? " marked" : "") + (c.winLine.includes(idx) ? " win" : "");
+                    let click = isMe ? `onclick="cellClick('${pid}', ${cIdx}, ${idx})"` : "";
+                    cellsHtml += `<div class="${classes}" ${click}>${idx===12 ? 'FREE<br><span>🏈</span>' : evt}</div>`;
+                });
+                let rr = isMe ? `<button class="btn-reroll" ${c.rerolls<=0?'disabled':''} onclick="reroll('${pid}',${cIdx})">USE</button>` : "";
+                cardsHtml += `
+                    <div class="single-card-wrap">
+                        <div class="bingo-grid-container" style="border-color:${tData.c}">
+                            <div class="card-label" style="background:${tData.c}">CARD ${cIdx+1}</div>
+                            <div class="grid">${cellsHtml}</div>
+                        </div>
+                        <div class="reroll-row" style="border-color:${tData.c}"><span>REROLLS: ${c.rerolls}</span>${rr}</div>
+                    </div>`;
+            });
+
+            html += `
+                <div class="player-zone ${isWinner?'winner':''} ${!isMe?'opponent':''}" style="border-color:${tData.c}">
+                    <div class="player-header">
+                        <img class="team-logo" src="logos/${tData.l}" style="border-color:${tData.c}" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI1MCIgZmlsbD0iIzMzMyIvPjwvc3ZnPg=='">
+                        <div class="player-name" style="background:${tData.c}">${p.name}</div>
+                    </div>
+                    ${cardsHtml}
+                </div>
+            `;
+        });
+        board.innerHTML = html;
     }
 
-    function send(pl) { 
-        pl.sender = myId; 
-        if(client && client.connected) client.publish(`${TOPIC_PRE}/${roomCode}`, JSON.stringify(pl)); 
+    window.cellClick = function(pid, cIdx, idx) {
+        if(pid !== myId || idx===12) return;
+        let p = gameState.players[myId];
+        let c = p.cards[cIdx];
+        if(c.marked.includes(idx)) c.marked = c.marked.filter(x=>x!==idx);
+        else c.marked.push(idx);
+        
+        // Win Check
+        c.winLine = [];
+        for(let l of WINS) if(l.every(x => c.marked.includes(x))) c.winLine = l;
+        
+        render();
+        send({ type: 'UPDATE', pData: p });
+    };
+
+    window.reroll = function(pid, cIdx) {
+        if(pid!==myId) return;
+        let p = gameState.players[myId];
+        if(p.cards[cIdx].rerolls > 0 && confirm("Burn 1 Reroll?")) {
+            p.cards[cIdx].rerolls--;
+            let nc = newCard();
+            p.cards[cIdx].events = nc.events;
+            p.cards[cIdx].marked = [12];
+            render();
+            send({ type: 'UPDATE', pData: p });
+        }
+    };
+
+    window.updateTeam = function() {
+        let t = document.getElementById('ingame-team').value;
+        if(gameState.players[myId]) {
+            gameState.players[myId].team = t;
+            render();
+            send({ type: 'UPDATE_TEAM', team: t });
+        }
     }
 
-    function resetAll() {
+    window.toggleFocusMode = function() { focusMode = !focusMode; document.getElementById('toggle-view-btn').innerText = focusMode?"SHOW OTHERS":"HIDE OTHERS"; render(); }
+    window.showInfo = function() {
+        let h = "";
+        for(let k in TIERS) h += `<div class="tier-list"><div class="tier-head" style="background:${TIERS[k].color}"><span>${TIERS[k].label}</span></div><div class="tier-items">${TIERS[k].items.join(", ")}</div></div>`;
+        document.getElementById('info-list').innerHTML = h;
+        document.getElementById('info-modal').style.display='flex';
+    }
+    window.resetAll = function() {
         if(!isHost) return;
-        if(confirm("New Cards for Everyone?")) {
+        if(confirm("New Cards for EVERYONE?")) {
             Object.keys(gameState.players).forEach(pid => {
                 let p = gameState.players[pid];
                 gameState.players[pid] = createPlayerData(p.name, p.team, p.cards.length);
             });
             currentWinnerName = null;
-            document.getElementById('winner-modal').style.display = 'none';
+            document.getElementById('winner-modal').style.display='none';
             render();
             send({ type: 'STATE', state: gameState });
         }
     }
-
     function celebrate() {
         const b = document.getElementById('celebration');
         if(b.childElementCount > 5) return;
         for(let i=0; i<30; i++){
             let f = document.createElement('div'); f.className='football'; f.innerHTML='🏈';
-            f.style.left = (Math.random() * 100) + 'vw';
-            f.style.animationDuration=(Math.random()*2+2)+'s';
-            f.style.fontSize = (Math.random()*4+2) + 'rem';
-            b.appendChild(f); 
-            setTimeout(()=>f.remove(), 4000);
+            f.style.left = Math.random()*100+'vw'; f.style.animationDuration=(Math.random()*2+2)+'s'; f.style.fontSize=(Math.random()*4+2)+'rem';
+            b.appendChild(f); setTimeout(()=>f.remove(),4000);
         }
     }
 </script>
