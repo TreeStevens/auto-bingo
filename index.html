@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <!-- 
-    NFL BEANO v9.1
-    - DATA: Added 90+ Question Database
-    - FEATURE: "No Trivia" Option added to Lobby
-    - UI: Made Trivia Setting more visible in Lobby
+    NFL BEANO v9.2
+    - FIXED: Huge Button Bug (Overrode global width:100% setting)
+    - FIXED: Footer layout alignment
+    - DATA: Includes full Trivia Database
 -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NFL BEANO v9.1</title>
+    <title>NFL BEANO v9.2</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Titan+One&display=swap" rel="stylesheet">
 
@@ -56,6 +56,8 @@
         }
         
         .btn-row { display: flex; gap: 10px; margin-top: 20px; }
+        
+        /* Global Button Style (Lobby) */
         button {
             width: 100%; padding: 15px; font-size: 1.3rem;
             font-family: 'Titan One', cursive;
@@ -94,7 +96,7 @@
         }
         .player-zone.opponent { transform: scale(0.95); opacity: 0.95; }
         
-        /* MEDALLION HEADER */
+        /* HEADER */
         .player-header {
             margin-top: -85px;
             display: flex; flex-direction: column; align-items: center;
@@ -174,9 +176,19 @@
             color: #333; font-weight: bold; font-size: 1rem;
             border: 3px solid #000; border-top: none;
         }
+        
+        /* FIX FOR BUTTON SIZE: Force auto width */
         .btn-card-action {
-            color: white; border: none; padding: 6px 14px; border-radius: 6px; 
-            cursor: pointer; font-family: 'Titan One'; font-size: 0.9rem; text-transform: uppercase;
+            width: auto !important; /* Override the 100% global */
+            min-width: 80px;
+            color: white; border: none; 
+            padding: 6px 14px; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-family: 'Titan One'; 
+            font-size: 0.9rem; 
+            text-transform: uppercase;
+            margin: 0; /* Remove margin */
         }
         .btn-use { background: #ef4444; }
         .btn-use:disabled { background: #94a3b8; cursor: default; opacity: 0.6; }
@@ -196,7 +208,7 @@
         }
         @keyframes bounceIn { from{transform:scale(0);} to{transform:scale(1);} }
 
-        /* FOOTER */
+        /* FOOTER CONTROLS */
         #footer-controls {
             position: fixed; bottom: 15px; left: 50%; transform: translateX(-50%);
             background: white; padding: 10px 25px; border-radius: 50px;
@@ -223,7 +235,7 @@
         #trivia-box.active { top: 0; }
         .trivia-q { font-size: 1.2rem; font-weight: bold; margin-bottom: 15px; color: #0f172a; }
         .trivia-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .t-btn { background: #f1f5f9; color: #333; border: 2px solid #cbd5e1; padding: 15px; border-radius: 10px; font-weight: bold; cursor: pointer; }
+        .t-btn { background: #f1f5f9; color: #333; border: 2px solid #cbd5e1; padding: 15px; border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%; } /* Ensure width for options */
         .t-btn.correct { background: #10b981; color: white; border-color: #10b981; }
         .t-btn.wrong { background: #ef4444; color: white; border-color: #ef4444; opacity: 0.5; }
 
@@ -264,7 +276,7 @@
     <div id="winner-modal">
         <span style="color:#ef4444; font-size:1.5rem; font-weight:bold;">BEANO!</span>
         <div id="winner-text"></div>
-        <button onclick="document.getElementById('winner-modal').style.display='none'" style="background:#333; color:white; font-size:1rem; padding:10px; border:none; border-radius:5px; cursor:pointer;">CLOSE</button>
+        <button onclick="document.getElementById('winner-modal').style.display='none'" style="background:#333; color:white; font-size:1rem; padding:10px; border:none; border-radius:5px; cursor:pointer; width: auto;">CLOSE</button>
     </div>
 
     <div id="info-modal" class="modal-overlay">
@@ -280,7 +292,7 @@
     <div id="lobby">
         <div class="lobby-card">
             <h1>NFL BEANO</h1>
-            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 9.1 &bull; 90+ QUESTIONS</p>
+            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 9.2 &bull; FIXES</p>
 
             <div class="control-group">
                 <label>Name (Max 10 chars)</label>
@@ -292,7 +304,7 @@
                 <select id="lobby-team"></select>
             </div>
 
-            <!-- TRIVIA OPTION IS NOW FULL WIDTH AND CLEAR -->
+            <!-- TRIVIA OPTION -->
             <div class="control-group">
                 <label style="color:#3b82f6;">Trivia Timer</label>
                 <select id="trivia-timer-input" style="border-color:#3b82f6;">
@@ -393,6 +405,7 @@
         "WAS": { n: "Washington Commanders", c: "#5A1414", l: "washington-commanders.svg" }
     };
 
+    // Full 90+ Question DB
     const TRIVIA_DB = [
         { q: "How many points is a touchdown?", o: ["3","6","7","1"], a: 1 },
         { q: "How long is an NFL field?", o: ["100 yd","110 yd","120 yd","90 yd"], a: 0 },
@@ -502,7 +515,7 @@
     ];
 
     const BROKER = 'wss://broker.emqx.io:8084/mqtt';
-    const TOPIC_PRE = 'nfl_beano_v9_1';
+    const TOPIC_PRE = 'nfl_beano_v9_2';
 
     let client, myId = 'p' + Math.random().toString(36).substr(2,6);
     let myName, myTeam, roomCode, isHost;
@@ -953,7 +966,6 @@
         const b = document.getElementById('celebration');
         if(b.childElementCount > 5) return;
         
-        // Find winner logo
         let logoSrc = null;
         Object.values(gameState.players).forEach(p => {
             if(p.name === winnerName) {
