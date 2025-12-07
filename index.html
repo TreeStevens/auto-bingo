@@ -1,23 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
 <!-- 
-    NFL BEANO v12.3
-    - CRASH PROOFING: Wrapped API parser in Try/Catch to prevent "White Screen" if ESPN data is weird.
-    - LOGIC FIX: Feed now handles "Halftime" and "End of Quarter" gaps without freezing.
-    - PRIORITY: Card renders BEFORE network connection starts to ensure it always appears.
-    - VISUAL: Added minimum height to Player Zone to prevent layout collapse.
+    NFL BEANO v12.4
+    - CRITICAL FIX: "Last Play" logic now checks Previous Drive if Current Drive is empty.
+      (Fixes the issue where feed stops after scores/turnovers).
+    - LOGIC: Maintains "Verified/Lockout" system.
+    - UI: All visual fixes (Card sizes, Colors, Medallions) preserved.
 -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NFL BEANO v12.3</title>
+    <title>NFL BEANO v12.4</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Titan+One&display=swap" rel="stylesheet">
 
     <style>
         :root {
             --bg-color: #0f172a;
-            --card-width: 350px;
+            --card-width: 360px;
         }
 
         * { box-sizing: border-box; }
@@ -89,7 +89,7 @@
             background: #0f172a; padding: 8px;
             display: flex; justify-content: center; gap: 10px; overflow-x: auto;
             border-bottom: 2px solid #334155;
-            min-height: 46px; /* Prevent collapse */
+            min-height: 46px; 
         }
         .score-pill {
             background: #1e293b; padding: 5px 12px; border-radius: 20px;
@@ -143,7 +143,7 @@
             display: flex; flex-direction: column; align-items: center;
             border: 8px solid #333; box-shadow: 0 15px 40px rgba(0,0,0,0.6);
             position: relative; margin-top: 60px; width: auto;
-            min-height: 400px; /* FIX: Prevents layout squash */
+            min-height: 400px; 
         }
         
         .player-header { margin-top: -80px; display: flex; flex-direction: column; align-items: center; margin-bottom: 15px; z-index: 10; }
@@ -199,6 +199,7 @@
             font-weight: bold; font-size: 1rem;
             border: 3px solid #000; border-top: none;
         }
+        
         .btn-card-action {
             width: auto; min-width: 90px; color: #333; border: 2px solid white;
             padding: 6px 14px; border-radius: 6px; cursor: pointer;
@@ -277,7 +278,7 @@
     <div id="lobby">
         <div class="lobby-card">
             <h1>NFL BEANO</h1>
-            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 12.3 &bull; CRASH PROOF</p>
+            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 12.4 &bull; ROBUST FEED</p>
 
             <div class="lobby-tabs">
                 <button class="tab-btn active" id="tab-host" onclick="switchTab('host')">HOST</button>
@@ -366,7 +367,7 @@
 
     const WINS = [[0,1,2,3,4],[5,6,7,8,9],[10,11,12,13,14],[15,16,17,18,19],[20,21,22,23,24],[0,5,10,15,20],[1,6,11,16,21],[2,7,12,17,22],[3,8,13,18,23],[4,9,14,19,24],[0,6,12,18,24],[4,8,12,16,20]];
     const BROKER = 'wss://broker.emqx.io:8084/mqtt';
-    const TOPIC_PRE = 'nfl_beano_v12_3';
+    const TOPIC_PRE = 'nfl_beano_v12_4';
 
     let client, myId = 'p' + Math.random().toString(36).substr(2,6);
     let myName, myTeam, roomCode, isHost;
@@ -483,7 +484,7 @@
         if(host) document.getElementById('reset-btn').style.display = 'block';
         document.getElementById('ingame-team').value = myTeam;
         
-        // RENDER IMMEDIATELY
+        // RENDER IMMEDIATELY (FIXED)
         render(); 
         
         connectMQTT();
@@ -538,13 +539,21 @@
                     updateScoreboard(scorePayload);
                 }
 
-                // SAFE PLAY PARSING
+                // CRITICAL FIX: LAST PLAY DETECTION (Previous Drive Support)
                 const t1 = TEAM_IDS[data.boxscore?.teams?.[0]?.team?.id] || "None";
                 const t2 = TEAM_IDS[data.boxscore?.teams?.[1]?.team?.id] || "None";
                 let lastPlay = null;
                 
+                // 1. Check Current Drive
                 if(data.drives && data.drives.current && data.drives.current.plays && data.drives.current.plays.length > 0) {
                     lastPlay = data.drives.current.plays[data.drives.current.plays.length - 1];
+                }
+                // 2. Fallback: Check Previous Drive (If current is empty/null, e.g. after score)
+                else if (data.drives && data.drives.previous && data.drives.previous.length > 0) {
+                    const lastDrive = data.drives.previous[data.drives.previous.length - 1];
+                    if (lastDrive.plays && lastDrive.plays.length > 0) {
+                        lastPlay = lastDrive.plays[lastDrive.plays.length - 1];
+                    }
                 }
 
                 if(lastPlay && processedPlays[gid] !== lastPlay.id) {
@@ -555,14 +564,6 @@
                         analyzed.forEach(evt => { if(!gameState.calls.includes(evt)) gameState.calls.push(evt); });
                         const payload = { type: 'FEED_ITEM', events: analyzed, text: lastPlay.text, t1: t1, t2: t2, calls: gameState.calls };
                         send(payload); addFeedItem(payload); render();
-                    }
-                } else if (!lastPlay) {
-                    // Detect STATUS UPDATE if no current play
-                    const detail = data.header?.competitions?.[0]?.status?.type?.detail;
-                    if(detail && processedPlays[gid] !== detail && (detail.includes("Half") || detail.includes("Final") || detail.includes("End"))) {
-                        processedPlays[gid] = detail;
-                        const payload = { type: 'FEED_ITEM', text: `*** ${detail.toUpperCase()} ***`, t1: t1, t2: t2, calls: gameState.calls };
-                        send(payload); addFeedItem(payload);
                     }
                 }
             } catch(e) { console.log("Feed Error (Ignored):", e); }
@@ -590,7 +591,7 @@
         if(up.includes("INCOMPLETE")) events.push("INC. PASS");
         if(typeUp.includes("KICKOFF")) events.push("KICKOFF");
         if(up.includes("TOUCHBACK")) events.push("TOUCHBACK");
-        if(up.includes("REVERSED") || up.includes("REVIEW") || up.includes("CHALLENGE")) events.push("REVIEW");
+        if(up.includes("REVERSED") || up.includes("REVIEW") || up.includes("CHALLENGE")) events.push("CHALLENGE FLAG");
         if(up.includes("INJURY") || up.includes("INJURED")) events.push("INJURY");
         if(up.includes("SAFETY")) events.push("SAFETY");
         if(up.includes("BLOCKED")) events.push("BLOCKED KICK");
