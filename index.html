@@ -1,15 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <!-- 
-    NFL BEANO v14.0 (CORE EDITION)
-    - REMOVED: Trivia & Taunts
-    - CORE: Verified Feed, Lockout Logic, Scoreboard
-    - STABILITY: Instant Render, Robust Feed Parser
+    NFL BEANO v13.1
+    - CRITICAL FIX: "Double Feed" Bug. Moved sender check to top of listener to prevent Host from processing their own broadcasts.
+    - CORE: Same stable logic as v13.0 (Instant Render, Simple Feed).
 -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NFL BEANO v14.0</title>
+    <title>NFL BEANO v13.1</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Titan+One&display=swap" rel="stylesheet">
 
@@ -120,8 +119,6 @@
             border-radius: 6px; font-size: 0.8rem; color: #e2e8f0; line-height: 1.2;
             border-left: 4px solid #64748b;
         }
-        .live-item.hunt { background: #713f12; border-color: #eab308; color: #fef08a; font-weight: bold; text-align: center; }
-
         .call-item {
             background: #10b981; color: #064e3b; 
             padding: 6px; margin-bottom: 4px; border-radius: 4px;
@@ -156,6 +153,11 @@
             color: white; padding: 8px 25px 5px 25px; border-radius: 30px;
             border: 4px solid white; margin-top: -20px; z-index: 1;
             text-shadow: 2px 2px 0 rgba(0,0,0,0.3); white-space: nowrap;
+        }
+        .trivia-badge {
+            background: #fbbf24; color: black; font-weight: bold; font-size: 0.8rem;
+            padding: 2px 10px; border-radius: 10px; margin-top: -8px; 
+            border: 2px solid white; z-index: 3;
         }
 
         /* GRID */
@@ -255,7 +257,7 @@
     <div id="lobby">
         <div class="lobby-card">
             <h1>NFL BEANO</h1>
-            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 14.0 &bull; CORE</p>
+            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 13.1 &bull; ECHO FIX</p>
 
             <div class="lobby-tabs">
                 <button class="tab-btn active" id="tab-host" onclick="switchTab('host')">HOST</button>
@@ -278,6 +280,15 @@
                     <option value="" disabled selected>Loading Schedule...</option>
                 </select>
                 <div id="no-games-msg" style="color:red; display:none; font-size:0.8rem;">No active games found.</div>
+            </div>
+
+            <div id="host-options">
+                <div class="control-group">
+                    <label style="color:#3b82f6;">Trivia Timer</label>
+                    <select id="trivia-timer-input">
+                        <option value="none">NO TRIVIA</option>
+                    </select>
+                </div>
             </div>
 
             <div class="control-group">
@@ -331,7 +342,7 @@
 
     const WINS = [[0,1,2,3,4],[5,6,7,8,9],[10,11,12,13,14],[15,16,17,18,19],[20,21,22,23,24],[0,5,10,15,20],[1,6,11,16,21],[2,7,12,17,22],[3,8,13,18,23],[4,9,14,19,24],[0,6,12,18,24],[4,8,12,16,20]];
     const BROKER = 'wss://broker.emqx.io:8084/mqtt';
-    const TOPIC_PRE = 'nfl_beano_v14_0';
+    const TOPIC_PRE = 'nfl_beano_v13_1';
 
     let client, myId = 'p' + Math.random().toString(36).substr(2,6);
     let myName, myTeam, roomCode, isHost;
@@ -360,23 +371,21 @@
             document.getElementById('tab-' + mode).classList.add('active');
             const btn = document.getElementById('action-btn');
             const roomIn = document.getElementById('room-input');
+            const hostOpts = document.getElementById('host-options');
             const feedLbl = document.getElementById('feed-lbl');
             
             if(mode === 'host') {
                 isHost = true;
-                btn.className = 'lobby-btn btn-host';
-                btn.onclick = () => initGame(true); 
+                btn.className = 'lobby-btn btn-host'; btn.innerText = 'START GAME'; btn.onclick = () => initGame(true);
                 roomIn.value = ''; roomIn.disabled = true; roomIn.placeholder = "HOST GENERATES CODE";
-                feedLbl.innerText = "Game Feed (Required)";
-                checkHostReady(); 
+                hostOpts.style.display = 'block'; feedLbl.innerText = "Game Feed (Required)";
+                checkHostReady();
             } else {
                 isHost = false;
-                btn.className = 'lobby-btn btn-join';
-                btn.innerText = 'JOIN GAME';
-                btn.disabled = false;
-                btn.onclick = () => initGame(false);
+                btn.className = 'lobby-btn btn-join'; btn.innerText = 'JOIN GAME'; btn.onclick = () => initGame(false);
                 roomIn.value = ''; roomIn.disabled = false; roomIn.placeholder = "ENTER 4-LETTER CODE";
-                feedLbl.innerText = "Add Feed (Optional)";
+                hostOpts.style.display = 'none'; feedLbl.innerText = "Add Feed (Optional)";
+                btn.disabled = false; 
             }
         };
         switchTab('host');
@@ -391,12 +400,10 @@
             if(data.events) {
                 data.events.forEach(e => {
                     const status = e.status.type.state; 
-                    if (status === 'in' || status === 'pre') {
-                        sel.innerHTML += `<option value="${e.id}">${e.name} (${status})</option>`;
-                    }
+                    if (['in','pre','post'].includes(status)) sel.innerHTML += `<option value="${e.id}">${e.name} (${status})</option>`;
                 });
             }
-            if(sel.options.length === 1) sel.innerHTML += `<option disabled>No live/upcoming games</option>`;
+            sel.innerHTML += `<option value="">None / Watch Party</option>`;
         } catch(e) { sel.innerHTML = "<option>Error loading games</option>"; }
     }
 
@@ -419,7 +426,6 @@
     function initGame(host) {
         const nameInput = document.getElementById('username').value.trim();
         if(!nameInput) return alert("Enter Name");
-        
         myName = nameInput || (host?"HOST":"GUEST");
         myTeam = document.getElementById('lobby-team').value;
         myGameId = document.getElementById('game-selector').value;
@@ -463,7 +469,7 @@
         return { events: pool, marked: [12], winLine: [], rerolls: 2 };
     }
 
-    // --- LIVE FEED & PARSER ---
+    // --- SIMPLE FEED LOGIC ---
     function startHostPoller() { setInterval(pollRoomGames, 10000); }
 
     async function pollRoomGames() {
@@ -475,18 +481,15 @@
                 const resp = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${gid}`);
                 const data = await resp.json();
                 
-                // SAFE SCOREBOARD
+                // Scoreboard Logic
                 if(data.header) {
                     const comps = data.header.competitions?.[0]?.competitors;
                     let scoreText = "";
-                    let statusDetail = "";
-                    
                     if(comps) {
                         const hId = comps[0].team.id; const aId = comps[1].team.id;
                         const hAbbr = TEAM_IDS[hId] || "NFL"; const aAbbr = TEAM_IDS[aId] || "NFL";
                         const hLogo = TEAMS[hAbbr]?.l || "nfl.svg"; const aLogo = TEAMS[aAbbr]?.l || "nfl.svg";
                         const status = data.header.competitions[0].status;
-                        statusDetail = status.type.detail; 
                         let clk = status.type.state === 'pre' ? new Date(data.header.competitions[0].date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : status.type.detail;
                         scoreText = `<div class="sb-team"><img src="logos/${aLogo}"> ${comps[1].score}</div><div class="sb-team">${comps[0].score} <img src="logos/${hLogo}"></div><span class="sb-clock">${clk}</span>`;
                     }
@@ -495,19 +498,17 @@
                     updateScoreboard(scorePayload);
                 }
 
-                // FEED FALLBACK LOGIC (v12.5)
-                const t1 = TEAM_IDS[data.boxscore?.teams?.[0]?.team?.id] || "None";
-                const t2 = TEAM_IDS[data.boxscore?.teams?.[1]?.team?.id] || "None";
+                // SIMPLE LOGIC: Get Last Play
                 let lastPlay = null;
-                
                 if(data.drives && data.drives.current && data.drives.current.plays && data.drives.current.plays.length > 0) {
                     lastPlay = data.drives.current.plays[data.drives.current.plays.length - 1];
-                } else if (data.drives && data.drives.previous && data.drives.previous.length > 0) {
+                } else if(data.drives && data.drives.previous && data.drives.previous.length > 0) {
                     const prevDrive = data.drives.previous[data.drives.previous.length - 1];
-                    if(prevDrive.plays && prevDrive.plays.length > 0) {
-                        lastPlay = prevDrive.plays[prevDrive.plays.length - 1];
-                    }
+                    if(prevDrive.plays && prevDrive.plays.length > 0) lastPlay = prevDrive.plays[prevDrive.plays.length - 1];
                 }
+
+                const t1 = TEAM_IDS[data.boxscore?.teams?.[0]?.team?.id] || "None";
+                const t2 = TEAM_IDS[data.boxscore?.teams?.[1]?.team?.id] || "None";
 
                 if(lastPlay && processedPlays[gid] !== lastPlay.id) {
                     processedPlays[gid] = lastPlay.id;
@@ -516,33 +517,24 @@
                     if(analyzed.length > 0) {
                         analyzed.forEach(evt => { if(!gameState.calls.includes(evt)) gameState.calls.push(evt); });
                         const payload = { type: 'FEED_ITEM', events: analyzed, text: lastPlay.text, t1: t1, t2: t2, calls: gameState.calls };
-                        send(payload); addFeedItem(payload); render();
+                        send(payload); 
+                        addFeedItem(payload); // Host adds
+                        render();
                     }
-                } else if (!lastPlay) {
-                    const detail = data.header?.competitions?.[0]?.status?.type?.detail;
-                    if(detail && processedPlays[gid] !== detail && (detail.includes("Half") || detail.includes("Final") || detail.includes("End"))) {
-                        processedPlays[gid] = detail;
-                        const payload = { type: 'FEED_ITEM', text: `*** ${detail.toUpperCase()} ***`, t1: t1, t2: t2, calls: gameState.calls };
-                        send(payload); addFeedItem(payload);
-                    }
-                }
-            } catch(e) { console.log("Feed Error (Ignored):", e); }
+                } 
+            } catch(e) { console.log("Feed Error:", e); }
         });
     }
 
+    // Logic: Regex Parser
     function analyzePlay(text, typeStr) {
         if(!text) return [];
         const up = text.toUpperCase(); const typeUp = typeStr.toUpperCase(); let events = [];
-        
         if(up.includes("TOUCHDOWN")) events.push("TOUCHDOWN");
-        if(up.includes("FIELD GOAL") && !up.includes("NO GOOD") && !up.includes("MISSED")) events.push("FIELD GOAL");
+        if(up.includes("FIELD GOAL") && !up.includes("NO GOOD")) events.push("FIELD GOAL");
         if(up.includes("MISSED") || up.includes("NO GOOD")) events.push("MISSED FG");
         if(up.includes("PUNT")) events.push("PUNT");
-        if(up.includes("SACK")) {
-            events.push("SACK");
-            const lossMatch = up.match(/LOSS OF (\d+)/);
-            if(lossMatch && parseInt(lossMatch[1]) >= 10) events.push("SACK 10+ YD LOSS");
-        }
+        if(up.includes("SACK")) { events.push("SACK"); if(up.match(/LOSS OF (\d+)/) && parseInt(RegExp.$1)>=10) events.push("SACK 10+ YD LOSS"); }
         if(up.includes("INTERCEPT") || typeUp.includes("INTERCEPT")) events.push("INTERCEPTION");
         if(up.includes("FUMBLE")) events.push("FUMBLE");
         if(up.includes("RECOVERED") && !up.includes("ONSIDE")) events.push("TURNOVER");
@@ -551,17 +543,15 @@
         if(up.includes("INCOMPLETE")) events.push("INC. PASS");
         if(typeUp.includes("KICKOFF")) events.push("KICKOFF");
         if(up.includes("TOUCHBACK")) events.push("TOUCHBACK");
-        if(up.includes("REVERSED") || up.includes("REVIEW") || up.includes("CHALLENGE")) events.push("REVIEW");
-        if(up.includes("INJURY") || up.includes("INJURED")) events.push("INJURY");
+        if(up.includes("REVERSED") || up.includes("REVIEW")) events.push("REVIEW");
+        if(up.includes("INJURY")) events.push("INJURY");
         if(up.includes("SAFETY")) events.push("SAFETY");
         if(up.includes("BLOCKED")) events.push("BLOCKED KICK");
-        
         if(up.includes("HOLDING")) events.push("HOLDING");
         if(up.includes("FALSE START")) events.push("FALSE START");
         if(up.includes("OFFSIDE")) events.push("OFFSIDES");
         if(up.includes("INTERFERENCE")) events.push("PASS INT");
-        if(up.includes("ROUGHING THE PASSER")) events.push("ROUGHING PASSER");
-        if(up.includes("ROUGHING THE KICKER")) events.push("ROUGHING KICKER");
+        if(up.includes("ROUGHING")) events.push("ROUGHING PASSER");
         if(up.includes("TAUNTING")) events.push("TAUNTING");
 
         const distMatch = up.match(/(\d+) (YD|YARD|YDS)/);
@@ -574,7 +564,6 @@
                 else if(yds >= 10 && yds <= 19) events.push("RUN 10-19 YDS");
                 else if(yds >= 20 && yds <= 39) events.push("RUN 20-39 YDS");
                 else if(yds >= 40) events.push("RUN 40+ YDS");
-                
                 if(yds < 0 && yds > -10) events.push("TFL 1-9 YDS");
             }
             if(isPass) {
@@ -594,24 +583,16 @@
     function addFeedItem(msg) {
         const liveFeed = document.getElementById('feed-live');
         const boardFeed = document.getElementById('feed-board');
-        
         const div = document.createElement('div');
         div.className = 'live-item';
         
-        if(msg.hunt) {
-            div.className += ' hunt';
-            div.innerText = msg.text;
-        } else {
-            div.innerText = msg.text; 
-        }
+        if(msg.hunt) { div.className += ' hunt'; div.innerText = msg.text; }
+        else { div.innerText = msg.text; }
         liveFeed.prepend(div);
 
         if(msg.events) {
             msg.events.forEach(evt => {
-                let call = document.createElement('div');
-                call.className = 'call-item';
-                call.innerText = evt;
-                boardFeed.prepend(call);
+                let call = document.createElement('div'); call.className = 'call-item'; call.innerText = evt; boardFeed.prepend(call);
             });
         }
     }
@@ -619,12 +600,7 @@
     function updateScoreboard(msg) {
         const bar = document.getElementById('active-games-bar');
         let pill = document.getElementById(`score-${msg.gid}`);
-        if(!pill) {
-            pill = document.createElement('div');
-            pill.id = `score-${msg.gid}`;
-            pill.className = 'score-pill';
-            bar.appendChild(pill);
-        }
+        if(!pill) { pill = document.createElement('div'); pill.id = `score-${msg.gid}`; pill.className = 'score-pill'; bar.appendChild(pill); }
         pill.innerHTML = msg.html;
     }
 
@@ -632,9 +608,8 @@
         const board = document.getElementById('game-board');
         const pIds = Object.keys(gameState.players);
         
-        if(pIds.length === 0 && !gameState.players[myId]) { 
-            board.innerHTML = "<div class='waiting-msg'>Connecting...</div>"; return; 
-        }
+        // Prevent clearing if no players but we are host locally
+        if(pIds.length === 0 && !gameState.players[myId]) { board.innerHTML = "<div class='waiting-msg'>Connecting...</div>"; return; }
         
         pIds.sort((a,b) => (a===myId ? -1 : 1));
         if(gameState.players[myId]) document.body.style.backgroundColor = TEAMS[gameState.players[myId].team].c;
@@ -657,8 +632,7 @@
                 if(unlocked) classes += " unlocked";
                 
                 if(idx===12) { 
-                    classes += " free"; 
-                    styleAttr = `style="background-color:${tData.c} !important;"`;
+                    classes += " free"; styleAttr = `style="background-color:${tData.c} !important;"`;
                 } else if(c.marked.includes(idx)) {
                     styleAttr = `style="background-color:${tData.c} !important; color:white !important; text-shadow:0 1px 2px rgba(0,0,0,0.8);"`;
                 }
@@ -666,6 +640,7 @@
                 if(c.winLine.includes(idx)) classes += " win";
                 
                 let content = evt;
+                // CENTER LOGO RESTORED
                 if(idx===12) content = `<div style="background:white; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; margin:0 auto; box-shadow:0 2px 5px rgba(0,0,0,0.3);"><img src="logos/${tData.l}" style="width:28px; height:28px; object-fit:contain;"></div>`;
                 
                 let click = (isMe && unlocked && idx!==12) ? `onclick="cellClick('${pid}', 0, ${idx})"` : "";
@@ -674,7 +649,7 @@
             
             let footerContent = "";
             if(isMe) footerContent = `<button class="btn-card-action btn-use" ${c.rerolls<=0?'disabled':''} onclick="reroll('${pid}')">USE</button>`;
-            else footerContent = ""; // No Taunt Button
+            else footerContent = ""; 
 
             let cardsHtml = `<div class="single-card-wrap"><div class="bingo-grid-container" style="border-color:${tData.c}"><div class="card-label" style="background:${tData.c}">CARD 1</div><div class="grid">${cellsHtml}</div></div><div class="card-footer" style="background-color:${tData.c}; border-color:${tData.c}; color:white;"><span>REROLLS: ${c.rerolls}</span>${footerContent}</div></div>`;
             
@@ -683,20 +658,12 @@
         board.innerHTML = html;
     }
 
+    // --- ACTIONS ---
     window.cellClick = function(pid, cIdx, idx) {
         let p = gameState.players[myId]; let c = p.cards[0];
         if(!gameState.calls.includes(c.events[idx])) return; 
         if(c.marked.includes(idx)) c.marked = c.marked.filter(x=>x!==idx); else c.marked.push(idx);
         c.winLine = []; for(let l of WINS) if(l.every(x => c.marked.includes(x))) c.winLine = l;
-        
-        WINS.forEach(line => {
-            let matches = line.filter(x => c.marked.includes(x));
-            if(matches.length === 4) {
-                let missing = line.find(x => !c.marked.includes(x));
-                let eventName = c.events[missing];
-                if(eventName !== "FREE") send({ type: 'FEED_ITEM', hunt: true, text: `${myName} IS IN FOR: ${eventName}` });
-            }
-        });
         render(); send({ type: 'UPDATE', pData: p });
     };
 
@@ -722,14 +689,14 @@
         const b = document.getElementById('celebration'); if(b.childElementCount > 5) return; 
         let logoSrc = null;
         Object.values(gameState.players).forEach(p => { if(p.name === winnerName) { let t = TEAMS[p.team]; if(t) logoSrc = `logos/${t.l}`; } });
-        for(let i=0; i<60; i++){ 
+        for(let i=0; i<30; i++){ 
             let type = Math.random() > 0.5 ? 'football' : 'logo';
             let f = document.createElement(type === 'football' ? 'div' : 'img');
             f.className = 'confetti';
             if(type === 'football') { f.className += ' football'; f.innerHTML='🏈'; f.style.fontSize=(Math.random()*4+2)+'rem'; }
             else if(logoSrc) { f.className += ' logo-confetti'; f.src = logoSrc; } else continue;
             f.style.left = Math.random()*100+'vw'; f.style.animationDuration=(Math.random()*2+2)+'s'; 
-            b.appendChild(f); setTimeout(()=>f.remove(),6000); 
+            b.appendChild(f); setTimeout(()=>f.remove(),4000); 
         } 
     }
 
@@ -753,6 +720,8 @@
                     return; 
                 }
                 if(msg.type === 'SCORE_UPDATE') { updateScoreboard(msg); return; }
+                
+                // CRITICAL FIX: SENDER CHECK MUST BE AT THE TOP to prevent self-echo
                 if(msg.sender === myId) return;
 
                 if(isHost) {
