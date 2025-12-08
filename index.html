@@ -1,16 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <!-- 
-    NFL BEANO v15.0
-    - HEARTBEAT: Auto-removes disconnected players after 20s.
-    - FEED UI: Home Team BG, White Text Bubble, Offense/Defense Logos.
-    - LOGIC: Contextual "In The Hunt" messages based on event type.
-    - DATA: Expanded Event Dictionary (Shotgun, Spike, Kneel, etc).
+    NFL BEANO v15.1
+    - UI: Restored "Code First" Join Workflow (Step 1: Code -> Step 2: Name).
+    - LOGIC: Joiners CANNOT select a feed; they strictly inherit the Host's feed.
+    - FIX: Heartbeat timeout extended to 60s (prevents accidental kicking).
+    - FIX: Host logic hardened to ensure Joiners get card data immediately.
 -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NFL BEANO v15.0</title>
+    <title>NFL BEANO v15.1</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Titan+One&display=swap" rel="stylesheet">
 
@@ -34,12 +34,13 @@
         .lobby-btn:disabled { background: #94a3b8; cursor: not-allowed; opacity: 0.7; }
         .btn-host { background: #3b82f6; color: white; }
         .btn-join { background: #10b981; color: white; }
+        
+        #join-step-2 { display: none; } /* Hidden initially for joiners */
 
         /* FEED & SCOREBOARD */
         #feed-container { width: 95%; max-width: 900px; margin: 10px auto 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-radius: 12px; overflow: hidden; background: #1e293b; border: 2px solid #334155; display: flex; flex-direction: column; }
         #active-games-bar { background: #0f172a; padding: 8px; display: flex; justify-content: center; gap: 10px; overflow-x: auto; border-bottom: 2px solid #334155; min-height: 46px; }
         
-        /* SCORE PILL MEDALLIONS */
         .score-pill { background: #1e293b; padding: 5px 15px; border-radius: 20px; border: 1px solid #475569; color: white; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; gap: 10px; white-space: nowrap; }
         .score-pill img { width: 28px; height: 28px; border-radius: 50%; background: white; padding: 2px; border:1px solid #ccc; }
 
@@ -49,21 +50,10 @@
         
         .feed-header { position: sticky; top: 0; background: rgba(15,23,42,0.9); color: #94a3b8; font-size: 0.7rem; font-weight: bold; text-align: center; padding: 4px; text-transform: uppercase; letter-spacing: 1px; z-index: 5; border-bottom: 1px solid #334155; }
         
-        /* PRO FEED VISUALS */
-        .live-item {
-            display: flex; align-items: center; gap: 8px;
-            padding: 8px; margin-bottom: 6px; border-radius: 8px;
-            min-height: 50px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
+        .live-item { display: flex; align-items: center; gap: 8px; padding: 8px; margin-bottom: 6px; border-radius: 8px; min-height: 50px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
         .feed-logo { width: 32px; height: 32px; object-fit: contain; background: white; border-radius: 50%; padding: 2px; border: 2px solid rgba(255,255,255,0.5); flex-shrink: 0; }
-        .feed-text-bubble {
-            background: white; color: #333; padding: 6px 10px; border-radius: 12px;
-            font-size: 0.8rem; line-height: 1.2; font-weight: 700; flex: 1;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
+        .feed-text-bubble { background: white; color: #333; padding: 6px 10px; border-radius: 12px; font-size: 0.8rem; line-height: 1.2; font-weight: 700; flex: 1; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
         .live-item.hunt .feed-text-bubble { background: #fef08a; border: 2px solid #eab308; }
-        
         .call-item { background: #10b981; color: #064e3b; padding: 6px; margin-bottom: 4px; border-radius: 4px; font-size: 0.75rem; font-weight: 800; text-align: center; text-transform: uppercase; animation: flashIn 0.5s; }
         @keyframes flashIn { from { transform: scale(0.1); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
@@ -74,6 +64,7 @@
         .team-logo-wrap { width: 100px; height: 100px; background: white; border-radius: 50%; border: 5px solid white; box-shadow: 0 5px 15px rgba(0,0,0,0.3); display: flex; justify-content: center; align-items: center; z-index: 2; }
         .team-logo { width: 70px; height: 70px; object-fit: contain; }
         .player-name { font-family: 'Titan One', cursive; font-size: 1.8rem; text-transform: uppercase; color: white; padding: 8px 25px 5px 25px; border-radius: 30px; border: 4px solid white; margin-top: -20px; z-index: 1; text-shadow: 2px 2px 0 rgba(0,0,0,0.3); white-space: nowrap; }
+        .trivia-badge { background: #fbbf24; color: black; font-weight: bold; font-size: 0.8rem; padding: 2px 10px; border-radius: 10px; margin-top: -8px; border: 2px solid white; z-index: 3; }
         
         .single-card-wrap { width: var(--card-width); }
         .bingo-grid-container { background: #000; border-radius: 12px 12px 0 0; overflow: hidden; border: 3px solid #000; border-bottom: none; }
@@ -105,15 +96,21 @@
         .waiting-msg { width: 100%; text-align: center; margin-top: 100px; font-size: 1.5rem; opacity: 0.5; animation: pulse 2s infinite; }
         #error-banner { position: fixed; top:0; left:0; width:100%; background:red; color:white; text-align: center; padding: 10px; z-index: 10000; display: none; font-size: 0.8rem;}
         .tier-list { text-align: left; margin-bottom: 15px; } .tier-head { font-weight: bold; padding: 5px; color: white; border-radius: 5px; margin-bottom: 5px; } .tier-items { font-size: 0.85rem; line-height: 1.4; color: #555; padding-left: 5px; }
+        /* TAUNT BUBBLE */
+        .taunt-bubble { position: absolute; top: 10%; left: 5%; right: 5%; background: white; border: 4px solid #ef4444; color: #1e293b; padding: 15px; border-radius: 15px; text-align: center; font-family: 'Titan One'; font-size: 1.2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 50; animation: bounceIn 0.5s; pointer-events: none; }
+        @keyframes bounceIn { from{transform:scale(0);} to{transform:scale(1);} }
+
     </style>
 </head>
 <body>
 
     <div id="error-banner"></div>
+
     <div id="winner-modal">
         <div style="font-family:'Titan One'; font-size:3rem; color:#0f172a; margin:20px 0;" id="winner-text"></div>
         <button onclick="document.getElementById('winner-modal').style.display='none'" style="background:#333; color:white; font-size:1rem; padding:10px 20px; border:none; border-radius:5px; cursor:pointer; width: auto;">CLOSE</button>
     </div>
+
     <div id="info-modal" class="modal-overlay">
         <div class="modal-content">
             <h2>OFFICIAL CALL LIST</h2>
@@ -126,35 +123,50 @@
     <div id="lobby">
         <div class="lobby-card">
             <h1>NFL BEANO</h1>
-            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 15.0 &bull; PRO FEED</p>
+            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 15.1 &bull; JOIN FIX</p>
+
             <div class="lobby-tabs">
                 <button class="tab-btn active" id="tab-host" onclick="switchTab('host')">HOST</button>
                 <button class="tab-btn" id="tab-join" onclick="switchTab('join')">JOIN</button>
             </div>
-            <div class="control-group">
-                <label>Your Name (Max 10)</label>
-                <input type="text" id="username" placeholder="NAME" maxlength="10">
+
+            <!-- SHARED INPUTS (Revealed based on flow) -->
+            <div id="join-step-1" class="control-group" style="display:none;">
+                 <label>Room Code (Ask Host)</label>
+                 <input type="text" id="room-input-join" placeholder="4 LETTERS" style="text-transform:uppercase; text-align:center; font-size:1.5rem; letter-spacing:5px;">
+                 <button class="lobby-btn btn-join" id="btn-next" onclick="joinNext()" style="margin-top:15px;">NEXT &rarr;</button>
             </div>
-            <div class="control-group">
-                <label>Your Team</label>
-                <select id="lobby-team"></select>
+
+            <div id="setup-area">
+                <div class="control-group">
+                    <label>Your Name (Max 10)</label>
+                    <input type="text" id="username" placeholder="NAME" maxlength="10">
+                </div>
+
+                <div class="control-group">
+                    <label>Your Team</label>
+                    <select id="lobby-team"></select>
+                </div>
+                
+                <div class="control-group" id="feed-group">
+                    <label id="feed-lbl">Game Feed (Host Required)</label>
+                    <select id="game-selector" onchange="checkHostReady()">
+                        <option value="" disabled selected>Loading Schedule...</option>
+                    </select>
+                </div>
+
+                <button id="action-btn" class="lobby-btn btn-host" onclick="initGame()">START GAME</button>
             </div>
-            <div class="control-group">
-                <label id="feed-lbl">Game Feed</label>
-                <select id="game-selector" onchange="checkHostReady()">
-                    <option value="" disabled selected>Loading Schedule...</option>
-                </select>
-                <div id="no-games-msg" style="color:red; display:none; font-size:0.8rem;">No active games found.</div>
+            
+            <div id="host-code-display" class="control-group" style="display:none; margin-top:15px;">
+                 <label>Room Code will be:</label>
+                 <input type="text" id="room-input-host" readonly style="text-transform:uppercase; background:#f1f5f9; color:#666; font-weight:bold; text-align:center;">
             </div>
-            <div class="control-group">
-                 <label id="room-lbl">Room Code</label>
-                 <input type="text" id="room-input" placeholder="Generating..." style="text-transform:uppercase;">
-            </div>
-            <button id="action-btn" class="lobby-btn btn-host" disabled>LOADING...</button>
+
         </div>
     </div>
 
-    <!-- SPLIT FEED -->
+    <!-- FEED & BOARD -->
     <div id="feed-container" class="hidden">
         <div id="active-games-bar"></div>
         <div id="feed-split">
@@ -182,18 +194,16 @@
     <div id="celebration"></div>
 
 <script>
-    // EXPANDED DATASET
     const TIERS = {
         common: { label: "COMMON (12)", color: "#10b981", items: ["FIRST DOWN", "PUNT", "TIMEOUT", "PENALTY FLAG", "INC. PASS", "RUN 5-9 YDS", "PASS 5-9 YDS", "KICKOFF", "TOUCHBACK", "SACK", "RUN 10-19 YDS", "PASS 10-19 YDS"] },
         uncommon: { label: "UNCOMMON (8)", color: "#f59e0b", items: ["TOUCHDOWN", "FIELD GOAL", "TURNOVER", "INTERCEPTION", "FUMBLE", "4TH DOWN TRY", "RUN 20-39 YDS", "PASS 20-39 YDS", "TFL 1-9 YDS", "REVIEW", "RETURN 10-19 YDS", "HOLDING", "FALSE START", "OFFSIDES", "PASS INT", "SHOTGUN", "FAIR CATCH"] },
         rare: { label: "RARE (4)", color: "#ef4444", items: ["MISSED FG", "2-PT CONV", "SAFETY", "BLOCKED KICK", "DEFENSIVE TD", "INJURY", "OVERTIME", "RUN 40+ YDS", "PASS 40+ YDS", "RETURN 20+ YDS", "SACK 10+ YD LOSS", "ROUGHING PASSER", "ROUGHING KICKER", "TAUNTING", "SPIKE", "KNEEL", "NO HUDDLE"] }
     };
-    
     const TEAMS = { "None": { n: "No Team", c: "#333", l: "nfl.svg" }, "ARI": { n: "Cardinals", c: "#97233F", l: "arizona-cardinals.svg" }, "ATL": { n: "Falcons", c: "#A71930", l: "atlanta-falcons.svg" }, "BAL": { n: "Ravens", c: "#241773", l: "baltimore-ravens.svg" }, "BUF": { n: "Bills", c: "#00338D", l: "buffalo-bills.svg" }, "CAR": { n: "Panthers", c: "#0085CA", l: "carolina-panthers.svg" }, "CHI": { n: "Bears", c: "#0B162A", l: "chicago-bears.svg" }, "CIN": { n: "Bengals", c: "#FB4F14", l: "cincinnati-bengals.svg" }, "CLE": { n: "Browns", c: "#311D00", l: "cleveland-browns.svg" }, "DAL": { n: "Cowboys", c: "#003594", l: "dallas-cowboys.svg" }, "DEN": { n: "Broncos", c: "#FB4F14", l: "denver-broncos.svg" }, "DET": { n: "Lions", c: "#0076B6", l: "detroit-lions.svg" }, "GB": { n: "Packers", c: "#203731", l: "green-bay-packers.svg" }, "HOU": { n: "Texans", c: "#03202F", l: "houston-texans.svg" }, "IND": { n: "Colts", c: "#002C5F", l: "indianapolis-colts.svg" }, "JAX": { n: "Jaguars", c: "#006778", l: "jacksonville-jaguars.svg" }, "KC": { n: "Chiefs", c: "#E31837", l: "kansas-city-chiefs.svg" }, "LV": { n: "Raiders", c: "#000", l: "oakland-raiders.svg" }, "LAC": { n: "Chargers", c: "#0080C6", l: "los-angeles-chargers.svg" }, "LAR": { n: "Rams", c: "#003594", l: "los-angeles-rams.svg" }, "MIA": { n: "Dolphins", c: "#008E97", l: "miami-dolphins.svg" }, "MIN": { n: "Vikings", c: "#4F2683", l: "minnesota-vikings.svg" }, "NE": { n: "Patriots", c: "#002244", l: "new-england-patriots.svg" }, "NO": { n: "Saints", c: "#D3BC8D", l: "new-orleans-saints.svg" }, "NYG": { n: "Giants", c: "#0B2265", l: "new-york-giants.svg" }, "NYJ": { n: "Jets", c: "#125740", l: "new-york-jets.svg" }, "PHI": { n: "Eagles", c: "#004C54", l: "philadelphia-eagles.svg" }, "PIT": { n: "Steelers", c: "#FFB612", l: "pittsburgh-steelers.svg" }, "SF": { n: "49ers", c: "#AA0000", l: "san-francisco-49ers.svg" }, "SEA": { n: "Seahawks", c: "#002244", l: "seattle-seahawks.svg" }, "TB": { n: "Buccaneers", c: "#D50A0A", l: "tampa-bay-buccaneers.svg" }, "TEN": { n: "Titans", c: "#0C2340", l: "tennessee-titans.svg" }, "WAS": { n: "Commanders", c: "#5A1414", l: "washington-commanders.svg" } };
     const TEAM_IDS = { "22":"ARI", "1":"ATL", "33":"BAL", "2":"BUF", "29":"CAR", "3":"CHI", "4":"CIN", "5":"CLE", "6":"DAL", "7":"DEN", "8":"DET", "9":"GB", "34":"HOU", "11":"IND", "30":"JAX", "12":"KC", "13":"LV", "24":"LAC", "14":"LAR", "15":"MIA", "16":"MIN", "17":"NE", "18":"NO", "19":"NYG", "20":"NYJ", "21":"PHI", "23":"PIT", "25":"SF", "26":"SEA", "27":"TB", "10":"TEN", "28":"WAS" };
     const WINS = [[0,1,2,3,4],[5,6,7,8,9],[10,11,12,13,14],[15,16,17,18,19],[20,21,22,23,24],[0,5,10,15,20],[1,6,11,16,21],[2,7,12,17,22],[3,8,13,18,23],[4,9,14,19,24],[0,6,12,18,24],[4,8,12,16,20]];
     const BROKER = 'wss://broker.emqx.io:8084/mqtt';
-    const TOPIC_PRE = 'nfl_beano_v15_0';
+    const TOPIC_PRE = 'nfl_beano_v15_1';
 
     let client, myId = 'p' + Math.random().toString(36).substr(2,6);
     let myName, myTeam, roomCode, isHost;
@@ -202,6 +212,7 @@
     let gameState = { players: {}, calls: [] }; 
     let myGameId = null;
     let processedPlays = {}; 
+    let seenMessages = new Set();
     let ls, is_sel;
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -220,26 +231,55 @@
         window.switchTab = function(mode) {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.getElementById('tab-' + mode).classList.add('active');
-            const btn = document.getElementById('action-btn');
-            const roomIn = document.getElementById('room-input');
-            const feedLbl = document.getElementById('feed-lbl');
             
+            const btn = document.getElementById('action-btn');
+            const setup = document.getElementById('setup-area');
+            const join1 = document.getElementById('join-step-1');
+            const hostCode = document.getElementById('host-code-display');
+            const feedGroup = document.getElementById('feed-group');
+
             if(mode === 'host') {
                 isHost = true;
-                btn.className = 'lobby-btn btn-host'; btn.innerText = 'START GAME'; btn.onclick = () => initGame(true);
-                roomIn.value = ''; roomIn.disabled = true; roomIn.placeholder = "HOST GENERATES CODE";
-                feedLbl.innerText = "Game Feed (Required)";
-                checkHostReady();
+                join1.style.display = 'none';
+                setup.style.display = 'block';
+                hostCode.style.display = 'block';
+                feedGroup.style.display = 'block';
+                
+                document.getElementById('room-input-host').value = Math.random().toString(36).substr(2,4).toUpperCase();
+                
+                btn.style.display = 'block';
+                btn.className = 'lobby-btn btn-host'; 
+                btn.innerText = 'START GAME'; 
+                btn.onclick = () => initGame(true);
+                
+                checkHostReady(); 
             } else {
                 isHost = false;
-                btn.className = 'lobby-btn btn-join'; btn.innerText = 'JOIN GAME'; btn.onclick = () => initGame(false);
-                roomIn.value = ''; roomIn.disabled = false; roomIn.placeholder = "ENTER 4-LETTER CODE";
-                feedLbl.innerText = "Add Feed (Optional)";
-                btn.disabled = false; 
+                setup.style.display = 'none';
+                hostCode.style.display = 'none';
+                feedGroup.style.display = 'none'; // Joiners inherit feed
+                btn.style.display = 'none'; 
+                join1.style.display = 'block'; // Show Code Input First
             }
         };
         switchTab('host');
     });
+
+    window.joinNext = function() {
+        const code = document.getElementById('room-input-join').value.trim().toUpperCase();
+        if(code.length !== 4) return alert("Please enter a 4-letter Room Code.");
+        roomCode = code;
+        
+        document.getElementById('join-step-1').style.display = 'none';
+        document.getElementById('setup-area').style.display = 'block';
+        
+        const btn = document.getElementById('action-btn');
+        btn.style.display = 'block';
+        btn.className = 'lobby-btn btn-join';
+        btn.innerText = 'JOIN GAME';
+        btn.disabled = false; 
+        btn.onclick = () => initGame(false);
+    };
 
     async function fetchGamesList() {
         const sel = document.getElementById('game-selector');
@@ -248,14 +288,18 @@
             const data = await resp.json();
             sel.innerHTML = `<option value="" selected>Select Game...</option>`;
             if(data.events) {
+                const now = new Date();
                 data.events.forEach(e => {
                     const status = e.status.type.state; 
-                    if (status === 'in' || status === 'pre') {
+                    const startTime = new Date(e.date);
+                    const diffMins = (startTime - now) / 60000;
+                    if (status === 'in' || (status === 'pre' && diffMins <= 30)) {
                         sel.innerHTML += `<option value="${e.id}">${e.name} (${status})</option>`;
                     }
                 });
             }
-            if(sel.options.length === 1) sel.innerHTML += `<option disabled>No live/upcoming games</option>`;
+            if(sel.options.length === 1) sel.innerHTML += `<option disabled>No live games found</option>`;
+            sel.innerHTML += `<option value="">None / Watch Party</option>`;
         } catch(e) { sel.innerHTML = "<option>Error loading games</option>"; }
     }
 
@@ -264,29 +308,30 @@
         const btn = document.getElementById('action-btn');
         const feed = document.getElementById('game-selector').value;
         const name = document.getElementById('username').value;
-        if(feed && name) { btn.disabled = false; btn.innerText = "START GAME"; } 
-        else { btn.disabled = true; btn.innerText = feed ? "ENTER NAME" : "SELECT FEED"; }
+        if(feed && name) {
+            btn.disabled = false; btn.innerText = "START GAME";
+        } else {
+            btn.disabled = true; btn.innerText = feed ? "ENTER NAME" : "SELECT FEED";
+        }
     }
-
+    
     document.getElementById('username').addEventListener('keyup', checkHostReady);
+    document.getElementById('game-selector').addEventListener('change', checkHostReady);
 
     function initGame(host) {
         const nameInput = document.getElementById('username').value.trim();
         if(!nameInput) return alert("Enter Name");
         myName = nameInput;
         myTeam = document.getElementById('lobby-team').value;
-        myGameId = document.getElementById('game-selector').value;
         isHost = host;
-        
-        if(!myGameId && host) return alert("Host must select a live game feed.");
 
         if(host) {
-            roomCode = Math.random().toString(36).substr(2,4).toUpperCase();
-            gameState.players[myId] = createPlayerData(myName, myTeam, myGameId);
-        } else {
-            roomCode = document.getElementById('room-input').value.trim().toUpperCase();
-            if(roomCode.length !== 4) return alert("Enter 4-letter Code");
+            myGameId = document.getElementById('game-selector').value;
+            if(!myGameId) return alert("Host must select a live game feed.");
+            roomCode = document.getElementById('room-input-host').value;
         }
+
+        gameState.players[myId] = createPlayerData(myName, myTeam, myGameId);
 
         document.getElementById('lobby').classList.add('hidden');
         document.getElementById('feed-container').classList.remove('hidden');
@@ -298,12 +343,11 @@
         render(); 
         connectMQTT();
         
-        if(isHost) {
-            startHostPoller(); 
-            startHeartbeatMonitor(); // HEARTBEAT HOST SIDE
-            pollRoomGames(); 
+        if(myGameId) {
+            startPoller(myGameId); 
         }
-        startHeartbeatSender(); // HEARTBEAT CLIENT SIDE
+        startHeartbeatSender();
+        if(isHost) startHeartbeatMonitor();
     }
 
     function createPlayerData(name, team, gameId) {
@@ -318,7 +362,7 @@
         return { events: pool, marked: [12], winLine: [], rerolls: 2 };
     }
 
-    // --- HEARTBEAT SYSTEM ---
+    // --- HEARTBEAT ---
     function startHeartbeatSender() {
         setInterval(() => send({ type: 'HEARTBEAT' }), 5000);
     }
@@ -328,7 +372,8 @@
             const now = Date.now();
             let changed = false;
             Object.keys(gameState.players).forEach(pid => {
-                if (now - gameState.players[pid].lastSeen > 20000) { // 20s timeout
+                // 60 second timeout before kicking (relaxed)
+                if (now - gameState.players[pid].lastSeen > 60000) { 
                     delete gameState.players[pid];
                     changed = true;
                 }
@@ -338,86 +383,74 @@
     }
 
     // --- FEED LOGIC ---
-    function startHostPoller() { setInterval(pollRoomGames, 10000); }
+    function startPoller(gid) { 
+        setInterval(() => pollGame(gid), 10000); 
+        pollGame(gid); 
+    }
 
-    async function pollRoomGames() {
-        const gameIds = new Set();
-        Object.values(gameState.players).forEach(p => { if(p.gameId) gameIds.add(p.gameId); });
+    async function pollGame(gid) {
+        if(!gid) return;
+        try {
+            const resp = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${gid}`);
+            const data = await resp.json();
+            
+            // Scoreboard Logic
+            let hTeam, aTeam, hLogo, aLogo, hCol, aCol;
+            if(data.header) {
+                const comps = data.header.competitions?.[0]?.competitors;
+                let scoreText = "";
+                if(comps) {
+                    const hId = comps[0].team.id; const aId = comps[1].team.id;
+                    const hAbbr = TEAM_IDS[hId] || "NFL"; const aAbbr = TEAM_IDS[aId] || "NFL";
+                    hLogo = TEAMS[hAbbr]?.l || "nfl.svg"; aLogo = TEAMS[aAbbr]?.l || "nfl.svg";
+                    hCol = TEAMS[hAbbr]?.c || "#333"; aCol = TEAMS[aAbbr]?.c || "#333";
+                    
+                    const status = data.header.competitions[0].status;
+                    let clk = status.type.state === 'pre' ? new Date(data.header.competitions[0].date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : status.type.detail;
+                    scoreText = `<div class="sb-team"><img src="logos/${aLogo}"> ${comps[1].score}</div><div class="sb-team">${comps[0].score} <img src="logos/${hLogo}"></div><span class="sb-clock">${clk}</span>`;
+                }
+                const scorePayload = { type: 'SCORE_UPDATE', gid: gid, html: scoreText };
+                send(scorePayload);
+                updateScoreboard(scorePayload);
+            }
 
-        gameIds.forEach(async (gid) => {
-            try {
-                const resp = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${gid}`);
-                const data = await resp.json();
+            // Play Logic
+            let lastPlay = null;
+            if(data.drives && data.drives.current && data.drives.current.plays && data.drives.current.plays.length > 0) {
+                lastPlay = data.drives.current.plays[data.drives.current.plays.length - 1];
+            } else if(data.drives && data.drives.previous && data.drives.previous.length > 0) {
+                const prevDrive = data.drives.previous[data.drives.previous.length - 1];
+                if(prevDrive.plays && prevDrive.plays.length > 0) lastPlay = prevDrive.plays[prevDrive.plays.length - 1];
+            }
+
+            if(lastPlay && processedPlays[gid] !== lastPlay.id) {
+                processedPlays[gid] = lastPlay.id;
+                const analyzed = analyzePlay(lastPlay.text, lastPlay.type?.text || "");
                 
-                // Scoreboard Logic
-                let hTeam, aTeam, hLogo, aLogo, hCol, aCol;
-
-                if(data.header) {
-                    const comps = data.header.competitions?.[0]?.competitors;
-                    let scoreText = "";
-                    if(comps) {
-                        const hId = comps[0].team.id; const aId = comps[1].team.id;
-                        const hAbbr = TEAM_IDS[hId] || "NFL"; const aAbbr = TEAM_IDS[aId] || "NFL";
-                        hTeam = hAbbr; aTeam = aAbbr;
-                        hLogo = TEAMS[hAbbr]?.l || "nfl.svg"; aLogo = TEAMS[aAbbr]?.l || "nfl.svg";
-                        hCol = TEAMS[hAbbr]?.c || "#333"; aCol = TEAMS[aAbbr]?.c || "#333";
-                        
-                        const status = data.header.competitions[0].status;
-                        let clk = status.type.state === 'pre' ? new Date(data.header.competitions[0].date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : status.type.detail;
-                        scoreText = `<div class="sb-team"><img src="logos/${aLogo}"> ${comps[1].score}</div><div class="sb-team">${comps[0].score} <img src="logos/${hLogo}"></div><span class="sb-clock">${clk}</span>`;
-                    }
-                    const scorePayload = { type: 'SCORE_UPDATE', gid: gid, html: scoreText };
-                    send(scorePayload);
-                    updateScoreboard(scorePayload);
+                // Color feed based on Home Team for now (simpler than tracking possession)
+                const payload = { 
+                    type: 'FEED_ITEM', 
+                    events: analyzed, 
+                    text: lastPlay.text, 
+                    bg: hCol, 
+                    l1: `logos/${hLogo}`, 
+                    l2: `logos/${aLogo}`, 
+                    calls: []
+                };
+                
+                if(analyzed.length > 0) {
+                    analyzed.forEach(evt => { if(!gameState.calls.includes(evt)) gameState.calls.push(evt); });
+                    payload.calls = gameState.calls;
                 }
 
-                // Play Logic
-                let lastPlay = null;
-                if(data.drives && data.drives.current && data.drives.current.plays && data.drives.current.plays.length > 0) {
-                    lastPlay = data.drives.current.plays[data.drives.current.plays.length - 1];
-                } else if(data.drives && data.drives.previous && data.drives.previous.length > 0) {
-                    const prevDrive = data.drives.previous[data.drives.previous.length - 1];
-                    if(prevDrive.plays && prevDrive.plays.length > 0) lastPlay = prevDrive.plays[prevDrive.plays.length - 1];
-                }
-
-                if(lastPlay && processedPlays[gid] !== lastPlay.id) {
-                    processedPlays[gid] = lastPlay.id;
-                    const analyzed = analyzePlay(lastPlay.text, lastPlay.type?.text || "");
-                    
-                    // Determine Possession Color for Feed
-                    // Try to guess possession based on drive description or default to Home
-                    // Since specific possession data in summary is tricky, we default to Home Team BG
-                    // But we try to set text color based on who scored/acted
-                    
-                    // Construct Payload
-                    const payload = { 
-                        type: 'FEED_ITEM', 
-                        events: analyzed, 
-                        text: lastPlay.text, 
-                        bg: hCol, // Home Team BG
-                        txt: "#333", // Default text logic handled in CSS/JS
-                        l1: `logos/${hLogo}`, // Home Logo
-                        l2: `logos/${aLogo}`, // Away Logo
-                        calls: []
-                    };
-                    
-                    // Update Calls
-                    if(analyzed.length > 0) {
-                        analyzed.forEach(evt => { if(!gameState.calls.includes(evt)) gameState.calls.push(evt); });
-                        payload.calls = gameState.calls;
-                    }
-
-                    send(payload); addFeedItem(payload); render();
-                } 
-            } catch(e) { console.log("Feed Error:", e); }
-        });
+                send(payload); addFeedItem(payload); render();
+            } 
+        } catch(e) { console.log("Feed Error:", e); }
     }
 
     function analyzePlay(text, typeStr) {
         if(!text) return [];
         const up = text.toUpperCase(); const typeUp = typeStr.toUpperCase(); let events = [];
-        
-        // --- NEW & RESTORED EVENTS ---
         if(up.includes("TOUCHDOWN")) events.push("TOUCHDOWN");
         if(up.includes("FIELD GOAL") && !up.includes("NO GOOD") && !up.includes("MISSED")) events.push("FIELD GOAL");
         if(up.includes("MISSED") || up.includes("NO GOOD")) events.push("MISSED FG");
@@ -435,16 +468,14 @@
         if(up.includes("INJURY")) events.push("INJURY");
         if(up.includes("SAFETY")) events.push("SAFETY");
         if(up.includes("BLOCKED")) events.push("BLOCKED KICK");
-        
-        // NEW/EXPANDED
         if(up.includes("HOLDING")) events.push("HOLDING");
         if(up.includes("FALSE START")) events.push("FALSE START");
         if(up.includes("OFFSIDE")) events.push("OFFSIDES");
         if(up.includes("INTERFERENCE")) events.push("PASS INT");
         if(up.includes("ROUGHING")) events.push("ROUGHING PASSER");
         if(up.includes("TAUNTING")) events.push("TAUNTING");
-        if(up.includes("SHOTGUN") || up.includes("(SHOTGUN)")) events.push("SHOTGUN");
-        if(up.includes("NO HUDDLE") || up.includes("(NO HUDDLE)")) events.push("NO HUDDLE");
+        if(up.includes("SHOTGUN")) events.push("SHOTGUN");
+        if(up.includes("NO HUDDLE")) events.push("NO HUDDLE");
         if(up.includes("FAIR CATCH")) events.push("FAIR CATCH");
         if(up.includes("KNEELS")) events.push("KNEEL");
         if(up.includes("SPIKED")) events.push("SPIKE");
@@ -476,10 +507,9 @@
     }
 
     function addFeedItem(msg) {
-        // De-Dupe based on text if playID isn't perfectly reliable across clients
-        const uniqueKey = msg.text;
-        if(processedPlays[uniqueKey]) return;
-        processedPlays[uniqueKey] = true;
+        const uniqueKey = msg.playId ? msg.playId : msg.text;
+        if(seenMessages.has(uniqueKey)) return; 
+        seenMessages.add(uniqueKey);
 
         const liveFeed = document.getElementById('feed-live');
         const boardFeed = document.getElementById('feed-board');
@@ -489,7 +519,6 @@
         if(msg.hunt) { 
             div.className += ' hunt'; div.innerText = msg.text; 
         } else {
-            // PRO FEED VISUALS
             div.style.background = msg.bg || "#334155";
             div.innerHTML = `
                 <img class="feed-logo" src="${msg.l1 || 'logos/nfl.svg'}">
@@ -552,7 +581,7 @@
             
             let footerContent = "";
             if(isMe) footerContent = `<button class="btn-card-action btn-use" ${c.rerolls<=0?'disabled':''} onclick="reroll('${pid}')">USE</button>`;
-            else footerContent = `<span style="opacity:0.6; font-size:0.8rem; color:white;">REROLLS: ${c.rerolls}</span>`; // REMOVED TAUNT BUTTON
+            else footerContent = `<button class="btn-card-action btn-taunt" onclick="startTaunt('${pid}')">TAUNT</button>`;
 
             let cardsHtml = `<div class="single-card-wrap"><div class="bingo-grid-container" style="border-color:${tData.c}"><div class="card-label" style="background:${tData.c}">CARD 1</div><div class="grid">${cellsHtml}</div></div><div class="card-footer" style="background-color:${tData.c}; border-color:${tData.c}; color:white;"><span>REROLLS: ${c.rerolls}</span>${footerContent}</div></div>`;
             
@@ -561,14 +590,12 @@
         board.innerHTML = html;
     }
 
-    // --- ACTIONS ---
     window.cellClick = function(pid, cIdx, idx) {
         let p = gameState.players[myId]; let c = p.cards[0];
         if(!gameState.calls.includes(c.events[idx])) return; 
         if(c.marked.includes(idx)) c.marked = c.marked.filter(x=>x!==idx); else c.marked.push(idx);
         c.winLine = []; for(let l of WINS) if(l.every(x => c.marked.includes(x))) c.winLine = l;
         
-        // CONTEXTUAL HUNT MESSAGES
         WINS.forEach(line => {
             let matches = line.filter(x => c.marked.includes(x));
             if(matches.length === 4) {
@@ -592,6 +619,17 @@
             p.cards[0].rerolls--; let nc = newCard(); p.cards[0].events = nc.events; p.cards[0].marked = [12]; 
             render(); send({ type: 'UPDATE', pData: p }); 
         }
+    };
+
+    window.startTaunt = function(targetId) {
+        let msg = prompt("Message (Max 20 chars):");
+        if(msg) { msg = msg.substring(0,20).toUpperCase(); send({ type: 'TAUNT', from: myName, target: targetId, text: msg }); }
+    };
+    
+    window.showTaunt = function(text) {
+        let zone = document.querySelector('.player-zone.is-me .single-card-wrap');
+        if(!zone) return;
+        let b = document.createElement('div'); b.className = 'taunt-bubble'; b.innerText = text; zone.appendChild(b); setTimeout(() => b.remove(), 4000);
     };
 
     window.updateTeam = function() { let t = document.getElementById('ingame-team').value; if(gameState.players[myId]) { gameState.players[myId].team = t; render(); send({ type: 'UPDATE_TEAM', team: t }); } }
@@ -646,6 +684,14 @@
                 if(msg.type === 'SCORE_UPDATE') { updateScoreboard(msg); return; }
                 if(msg.sender === myId) return;
                 
+                if(msg.type === 'TAUNT') { 
+                    if(isHost) {
+                        const feedMsg = { type: 'FEED_ITEM', taunt: true, text: `${msg.from}: ${msg.text}` };
+                        send(feedMsg); addFeedItem(feedMsg);
+                    }
+                    if(msg.target === myId) showTaunt(`${msg.from} SAYS: ${msg.text}`);
+                }
+
                 if(isHost) {
                     if(msg.type === 'JOIN') { 
                         gameState.players[msg.sender] = createPlayerData(msg.name, msg.team, gameState.players[myId].gameId); 
