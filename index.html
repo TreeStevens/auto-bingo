@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <!-- 
-    NFL BEANO v16.2
-    - CRITICAL FIX: Consolidated Room Code inputs. Host now correctly generates code into the main input field.
-    - CORE: Retains "Code First" Join flow.
-    - CORE: Retains robust Feed Logic (v12.5).
+    NFL BEANO v16.4
+    - CSS FIX: Feed Text no longer "explodes" horizontally (added min-width:0 to flex items).
+    - LOGIC: Feed sends Team Abbreviation -> App looks up Local Logo.
+    - VISUAL: Logos forced to 32px to prevent blowout.
 -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NFL BEANO v16.2</title>
+    <title>NFL BEANO v16.4</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Titan+One&display=swap" rel="stylesheet">
 
@@ -115,12 +115,37 @@
             z-index: 5; border-bottom: 1px solid #334155;
         }
 
+        /* --- FIXED FEED ITEM STYLING --- */
         .live-item {
-            background: #334155; padding: 8px; margin-bottom: 5px;
-            border-radius: 6px; font-size: 0.8rem; color: #e2e8f0; line-height: 1.2;
-            border-left: 4px solid #64748b;
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px; margin-bottom: 6px; 
+            border-radius: 8px; min-height: 50px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            background: #334155; 
+            width: 100%; /* Ensure it fills but respects container */
         }
-        .live-item.hunt { background: #713f12; border-color: #eab308; color: #fef08a; font-weight: bold; text-align: center; }
+        
+        .feed-logo { 
+            width: 32px; height: 32px; /* Force Size */
+            min-width: 32px; /* Prevent Crush */
+            object-fit: contain; 
+            background: white; border-radius: 50%; 
+            padding: 2px; border: 2px solid rgba(255,255,255,0.5); 
+            flex-shrink: 0; 
+        }
+        
+        .feed-text-bubble {
+            background: white; color: #333; 
+            padding: 8px 12px; border-radius: 12px;
+            font-size: 0.8rem; line-height: 1.2; font-weight: 700; 
+            flex: 1; /* Grow to fill space */
+            min-width: 0; /* KEY FIX: Allows text to wrap inside Flexbox */
+            word-wrap: break-word; /* Fallback */
+            overflow-wrap: break-word; /* Modern wrapping */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .live-item.hunt .feed-text-bubble { background: #fef08a; border: 2px solid #eab308; }
 
         .call-item {
             background: #10b981; color: #064e3b; 
@@ -156,6 +181,11 @@
             color: white; padding: 8px 25px 5px 25px; border-radius: 30px;
             border: 4px solid white; margin-top: -20px; z-index: 1;
             text-shadow: 2px 2px 0 rgba(0,0,0,0.3); white-space: nowrap;
+        }
+        .trivia-badge {
+            background: #fbbf24; color: black; font-weight: bold; font-size: 0.8rem;
+            padding: 2px 10px; border-radius: 10px; margin-top: -8px; 
+            border: 2px solid white; z-index: 3;
         }
 
         /* GRID */
@@ -255,7 +285,7 @@
     <div id="lobby">
         <div class="lobby-card">
             <h1>NFL BEANO</h1>
-            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 16.2 &bull; FINAL</p>
+            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 16.4 &bull; CSS FIX</p>
 
             <div class="lobby-tabs">
                 <button class="tab-btn active" id="tab-host" onclick="switchTab('host')">HOST</button>
@@ -295,6 +325,7 @@
 
                 <button id="action-btn" class="lobby-btn btn-host" onclick="initGame()">START GAME</button>
             </div>
+            
         </div>
     </div>
 
@@ -340,7 +371,7 @@
 
     const WINS = [[0,1,2,3,4],[5,6,7,8,9],[10,11,12,13,14],[15,16,17,18,19],[20,21,22,23,24],[0,5,10,15,20],[1,6,11,16,21],[2,7,12,17,22],[3,8,13,18,23],[4,9,14,19,24],[0,6,12,18,24],[4,8,12,16,20]];
     const BROKER = 'wss://broker.emqx.io:8084/mqtt';
-    const TOPIC_PRE = 'nfl_beano_v16_2';
+    const TOPIC_PRE = 'nfl_beano_v16_4';
 
     let client, myId = 'p' + Math.random().toString(36).substr(2,6);
     let myName, myTeam, roomCode, isHost;
@@ -471,10 +502,10 @@
         if(host) {
             myGameId = document.getElementById('game-selector').value;
             if(!myGameId) return alert("Host must select a live game feed.");
-            roomCode = document.getElementById('room-input').value;
+            roomCode = document.getElementById('room-input-host').value;
         } else {
-            // Joiner reads from the unified room-input which now holds their code
             roomCode = document.getElementById('room-input').value.trim().toUpperCase();
+            if(!roomCode) roomCode = document.getElementById('room-input-join').value.trim().toUpperCase();
         }
 
         gameState.players[myId] = createPlayerData(myName, myTeam, myGameId);
@@ -526,11 +557,19 @@
                 if(comps) {
                     const hId = comps[0].team.id; const aId = comps[1].team.id;
                     const hAbbr = TEAM_IDS[hId] || "NFL"; const aAbbr = TEAM_IDS[aId] || "NFL";
-                    hLogo = TEAMS[hAbbr]?.l || "nfl.svg"; aLogo = TEAMS[aAbbr]?.l || "nfl.svg";
-                    hCol = TEAMS[hAbbr]?.c || "#333"; aCol = TEAMS[aAbbr]?.c || "#333";
+                    // Only send abbreviation
+                    hTeam = hAbbr; aTeam = aAbbr;
+                    hCol = TEAMS[hAbbr]?.c || "#333";
                     
                     const status = data.header.competitions[0].status;
                     let clk = status.type.state === 'pre' ? new Date(data.header.competitions[0].date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : status.type.detail;
+                    
+                    // Scoreboard needs Logos though, but we can look them up on render if we sent abbreviations. 
+                    // Or keep sending logos in scoreText since it is just HTML.
+                    // Let's stick to the v16.1 logic for scoreboard as it worked fine.
+                    // But for FEED ITEMS, we switch to abbreviations.
+                    
+                    hLogo = TEAMS[hAbbr]?.l || "nfl.svg"; aLogo = TEAMS[aAbbr]?.l || "nfl.svg";
                     scoreText = `<div class="sb-team"><img src="logos/${aLogo}"> ${comps[1].score}</div><div class="sb-team">${comps[0].score} <img src="logos/${hLogo}"></div><span class="sb-clock">${clk}</span>`;
                 }
                 const scorePayload = { type: 'SCORE_UPDATE', gid: gid, html: scoreText };
@@ -551,13 +590,14 @@
                 processedPlays[gid] = lastPlay.id;
                 const analyzed = analyzePlay(lastPlay.text, lastPlay.type?.text || "");
                 
+                // CORRECT LOGIC: Send Abbreviations (hTeam/aTeam), let Client lookup logo
                 const payload = { 
                     type: 'FEED_ITEM', 
                     events: analyzed, 
                     text: lastPlay.text, 
                     bg: hCol, 
-                    l1: `logos/${hLogo}`, 
-                    l2: `logos/${aLogo}`, 
+                    t1: hTeam,  // e.g. "KC"
+                    t2: aTeam,  // e.g. "HOU"
                     calls: []
                 };
                 
@@ -574,8 +614,6 @@
     function analyzePlay(text, typeStr) {
         if(!text) return [];
         const up = text.toUpperCase(); const typeUp = typeStr.toUpperCase(); let events = [];
-        
-        // EVENTS
         if(up.includes("TOUCHDOWN")) events.push("TOUCHDOWN");
         if(up.includes("FIELD GOAL") && !up.includes("NO GOOD") && !up.includes("MISSED")) events.push("FIELD GOAL");
         if(up.includes("MISSED") || up.includes("NO GOOD")) events.push("MISSED FG");
@@ -589,19 +627,16 @@
         if(up.includes("INCOMPLETE")) events.push("INC. PASS");
         if(typeUp.includes("KICKOFF")) events.push("KICKOFF");
         if(up.includes("TOUCHBACK")) events.push("TOUCHBACK");
-        if(up.includes("REVERSED") || up.includes("REVIEW") || up.includes("CHALLENGE")) events.push("REVIEW");
-        if(up.includes("INJURY") || up.includes("INJURED")) events.push("INJURY");
+        if(up.includes("REVERSED") || up.includes("REVIEW")) events.push("REVIEW");
+        if(up.includes("INJURY")) events.push("INJURY");
         if(up.includes("SAFETY")) events.push("SAFETY");
         if(up.includes("BLOCKED")) events.push("BLOCKED KICK");
-        
         if(up.includes("HOLDING")) events.push("HOLDING");
         if(up.includes("FALSE START")) events.push("FALSE START");
         if(up.includes("OFFSIDE")) events.push("OFFSIDES");
         if(up.includes("INTERFERENCE")) events.push("PASS INT");
         if(up.includes("ROUGHING")) events.push("ROUGHING PASSER");
         if(up.includes("TAUNTING")) events.push("TAUNTING");
-        if(up.includes("SHOTGUN")) events.push("SHOTGUN");
-        if(up.includes("FAIR CATCH")) events.push("FAIR CATCH");
 
         const distMatch = up.match(/(\d+) (YD|YARD|YDS)/);
         if(distMatch) {
@@ -630,8 +665,8 @@
     }
 
     function addFeedItem(msg) {
-        const uniqueKey = msg.playId ? msg.playId : msg.text;
-        if(seenMessages.has(uniqueKey)) return; 
+        const uniqueKey = msg.playId || msg.text;
+        if(seenMessages.has(uniqueKey)) return;
         seenMessages.add(uniqueKey);
 
         const liveFeed = document.getElementById('feed-live');
@@ -642,11 +677,15 @@
         if(msg.hunt) { 
             div.className += ' hunt'; div.innerText = msg.text; 
         } else {
+            // SAFE LOOKUP
+            const l1 = (TEAMS[msg.t1] && TEAMS[msg.t1].l) ? TEAMS[msg.t1].l : 'nfl.svg';
+            const l2 = (TEAMS[msg.t2] && TEAMS[msg.t2].l) ? TEAMS[msg.t2].l : 'nfl.svg';
+            
             div.style.background = msg.bg || "#334155";
             div.innerHTML = `
-                <img class="feed-logo" src="${msg.l1 || 'logos/nfl.svg'}">
+                <img class="feed-logo" src="logos/${l1}">
                 <div class="feed-text-bubble" style="color:${msg.bg || '#333'}">${msg.text}</div>
-                <img class="feed-logo" src="${msg.l2 || 'logos/nfl.svg'}">
+                <img class="feed-logo" src="logos/${l2}">
             `;
         }
         liveFeed.prepend(div);
@@ -777,7 +816,6 @@
         client.on('message', (tpc, m) => {
             try {
                 const msg = JSON.parse(m.toString());
-                
                 if(msg.type === 'FEED_ITEM') { 
                     addFeedItem(msg); 
                     if(msg.calls) { gameState.calls = msg.calls; render(); } 
