@@ -2,9 +2,9 @@
 <html lang="en">
 <!-- 
     NFL BEANO v16.2
-    - CRITICAL FIX: Restored missing CSS for Feed Logos (Fixes the "Huge Image" explosion).
-    - LAYOUT: Feed items now correctly align (Logo - Text - Logo).
-    - CORE: Same stable v16.1 logic.
+    - CRITICAL FIX: Consolidated Room Code inputs. Host now correctly generates code into the main input field.
+    - CORE: Retains "Code First" Join flow.
+    - CORE: Retains robust Feed Logic (v12.5).
 -->
 <head>
     <meta charset="UTF-8">
@@ -115,32 +115,12 @@
             z-index: 5; border-bottom: 1px solid #334155;
         }
 
-        /* --- RESTORED FEED CSS --- */
         .live-item {
-            display: flex; align-items: center; gap: 8px; /* ALIGNS LOGO-TEXT-LOGO */
-            padding: 8px; margin-bottom: 6px; 
-            border-radius: 8px; min-height: 50px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            background: #334155; /* Fallback */
+            background: #334155; padding: 8px; margin-bottom: 5px;
+            border-radius: 6px; font-size: 0.8rem; color: #e2e8f0; line-height: 1.2;
+            border-left: 4px solid #64748b;
         }
-        
-        .feed-logo { 
-            width: 32px; height: 32px; /* FORCES SMALL SIZE */
-            object-fit: contain; 
-            background: white; border-radius: 50%; 
-            padding: 2px; border: 2px solid rgba(255,255,255,0.5); 
-            flex-shrink: 0; 
-        }
-        
-        .feed-text-bubble {
-            background: white; color: #333; 
-            padding: 6px 10px; border-radius: 12px;
-            font-size: 0.8rem; line-height: 1.2; font-weight: 700; 
-            flex: 1; /* TAKES REMAINING SPACE */
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-        
-        .live-item.hunt .feed-text-bubble { background: #fef08a; border: 2px solid #eab308; }
+        .live-item.hunt { background: #713f12; border-color: #eab308; color: #fef08a; font-weight: bold; text-align: center; }
 
         .call-item {
             background: #10b981; color: #064e3b; 
@@ -176,11 +156,6 @@
             color: white; padding: 8px 25px 5px 25px; border-radius: 30px;
             border: 4px solid white; margin-top: -20px; z-index: 1;
             text-shadow: 2px 2px 0 rgba(0,0,0,0.3); white-space: nowrap;
-        }
-        .trivia-badge {
-            background: #fbbf24; color: black; font-weight: bold; font-size: 0.8rem;
-            padding: 2px 10px; border-radius: 10px; margin-top: -8px; 
-            border: 2px solid white; z-index: 3;
         }
 
         /* GRID */
@@ -280,7 +255,7 @@
     <div id="lobby">
         <div class="lobby-card">
             <h1>NFL BEANO</h1>
-            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 16.2 &bull; LOGO FIX</p>
+            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 16.2 &bull; FINAL</p>
 
             <div class="lobby-tabs">
                 <button class="tab-btn active" id="tab-host" onclick="switchTab('host')">HOST</button>
@@ -320,7 +295,6 @@
 
                 <button id="action-btn" class="lobby-btn btn-host" onclick="initGame()">START GAME</button>
             </div>
-            
         </div>
     </div>
 
@@ -398,9 +372,8 @@
             const btn = document.getElementById('action-btn');
             const setup = document.getElementById('setup-area');
             const join1 = document.getElementById('join-step-1');
-            const hostCode = document.getElementById('host-code-display');
+            const hostCode = document.getElementById('code-group');
             const feedGroup = document.getElementById('feed-group');
-            const codeGroup = document.getElementById('code-group');
             const roomIn = document.getElementById('room-input');
 
             if(mode === 'host') {
@@ -409,7 +382,6 @@
                 setup.style.display = 'block';
                 hostCode.style.display = 'block';
                 feedGroup.style.display = 'block';
-                codeGroup.style.display = 'block';
                 
                 roomIn.value = Math.random().toString(36).substr(2,4).toUpperCase();
                 roomIn.disabled = true;
@@ -424,10 +396,9 @@
                 isHost = false;
                 setup.style.display = 'none';
                 hostCode.style.display = 'none';
-                feedGroup.style.display = 'none'; // Joiners inherit feed
-                codeGroup.style.display = 'none';
+                feedGroup.style.display = 'none'; 
                 btn.style.display = 'none'; 
-                join1.style.display = 'block'; // Show Code Input First
+                join1.style.display = 'block'; 
             }
         };
         switchTab('host');
@@ -437,14 +408,13 @@
         const code = document.getElementById('room-input-join').value.trim().toUpperCase();
         if(code.length !== 4) return alert("Please enter a 4-letter Room Code.");
         
-        // COPY CODE TO MAIN INPUT SO INIT FINDS IT
         const roomIn = document.getElementById('room-input');
         roomIn.value = code;
         
         document.getElementById('join-step-1').style.display = 'none';
         document.getElementById('setup-area').style.display = 'block';
-        document.getElementById('feed-group').style.display = 'none'; // Joiner hides feed
-        document.getElementById('code-group').style.display = 'none'; // Joiner hides code gen
+        document.getElementById('feed-group').style.display = 'none'; 
+        document.getElementById('code-group').style.display = 'none'; 
         
         const btn = document.getElementById('action-btn');
         btn.style.display = 'block';
@@ -501,10 +471,10 @@
         if(host) {
             myGameId = document.getElementById('game-selector').value;
             if(!myGameId) return alert("Host must select a live game feed.");
-            roomCode = document.getElementById('room-input-host').value;
+            roomCode = document.getElementById('room-input').value;
         } else {
+            // Joiner reads from the unified room-input which now holds their code
             roomCode = document.getElementById('room-input').value.trim().toUpperCase();
-            if(!roomCode) roomCode = document.getElementById('room-input-join').value.trim().toUpperCase();
         }
 
         gameState.players[myId] = createPlayerData(myName, myTeam, myGameId);
@@ -581,7 +551,6 @@
                 processedPlays[gid] = lastPlay.id;
                 const analyzed = analyzePlay(lastPlay.text, lastPlay.type?.text || "");
                 
-                // Color feed based on Home Team (simpler than tracking possession)
                 const payload = { 
                     type: 'FEED_ITEM', 
                     events: analyzed, 
@@ -606,7 +575,7 @@
         if(!text) return [];
         const up = text.toUpperCase(); const typeUp = typeStr.toUpperCase(); let events = [];
         
-        // --- NEW & RESTORED EVENTS ---
+        // EVENTS
         if(up.includes("TOUCHDOWN")) events.push("TOUCHDOWN");
         if(up.includes("FIELD GOAL") && !up.includes("NO GOOD") && !up.includes("MISSED")) events.push("FIELD GOAL");
         if(up.includes("MISSED") || up.includes("NO GOOD")) events.push("MISSED FG");
@@ -620,19 +589,18 @@
         if(up.includes("INCOMPLETE")) events.push("INC. PASS");
         if(typeUp.includes("KICKOFF")) events.push("KICKOFF");
         if(up.includes("TOUCHBACK")) events.push("TOUCHBACK");
-        if(up.includes("REVERSED") || up.includes("REVIEW")) events.push("REVIEW");
-        if(up.includes("INJURY")) events.push("INJURY");
+        if(up.includes("REVERSED") || up.includes("REVIEW") || up.includes("CHALLENGE")) events.push("REVIEW");
+        if(up.includes("INJURY") || up.includes("INJURED")) events.push("INJURY");
         if(up.includes("SAFETY")) events.push("SAFETY");
         if(up.includes("BLOCKED")) events.push("BLOCKED KICK");
         
-        // NEW/EXPANDED
         if(up.includes("HOLDING")) events.push("HOLDING");
         if(up.includes("FALSE START")) events.push("FALSE START");
         if(up.includes("OFFSIDE")) events.push("OFFSIDES");
         if(up.includes("INTERFERENCE")) events.push("PASS INT");
         if(up.includes("ROUGHING")) events.push("ROUGHING PASSER");
         if(up.includes("TAUNTING")) events.push("TAUNTING");
-        if(up.includes("SHOTGUN") || up.includes("(SHOTGUN)")) events.push("SHOTGUN");
+        if(up.includes("SHOTGUN")) events.push("SHOTGUN");
         if(up.includes("FAIR CATCH")) events.push("FAIR CATCH");
 
         const distMatch = up.match(/(\d+) (YD|YARD|YDS)/);
@@ -662,9 +630,8 @@
     }
 
     function addFeedItem(msg) {
-        // De-Dupe based on text if playID isn't perfectly reliable across clients
-        const uniqueKey = msg.playId || msg.text;
-        if(seenMessages.has(uniqueKey)) return;
+        const uniqueKey = msg.playId ? msg.playId : msg.text;
+        if(seenMessages.has(uniqueKey)) return; 
         seenMessages.add(uniqueKey);
 
         const liveFeed = document.getElementById('feed-live');
@@ -675,7 +642,6 @@
         if(msg.hunt) { 
             div.className += ' hunt'; div.innerText = msg.text; 
         } else {
-            // PRO FEED VISUALS
             div.style.background = msg.bg || "#334155";
             div.innerHTML = `
                 <img class="feed-logo" src="${msg.l1 || 'logos/nfl.svg'}">
@@ -819,7 +785,7 @@
                 }
                 if(msg.type === 'SCORE_UPDATE') { updateScoreboard(msg); return; }
                 if(msg.sender === myId) return;
-                
+
                 if(isHost) {
                     if(msg.type === 'JOIN') { 
                         gameState.players[msg.sender] = createPlayerData(msg.name, msg.team, gameState.players[myId].gameId); 
