@@ -1,52 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
 <!-- 
-    NFL BEANO v16.5
-    - FEATURE: Added "Simulation Mode" to Game Feed.
-      Allows testing of feed logic, unlocking, and winning when no NFL games are live.
-    - LOGIC: Host generates fake play data if "Simulation" is selected.
-    - CORE: Same stable v16.4 styling and layout.
+    NFL BEANO v17.0
+    - FIX: Corrected element IDs so Room Code generation doesn't crash the script.
+    - FIX: "Start Game" button now relies on global state (isHost) rather than fragile arguments.
+    - CORE: Simulation Mode + Live Feed + Verified Board all active.
 -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NFL BEANO v16.5</title>
+    <title>NFL BEANO v17.0</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Titan+One&display=swap" rel="stylesheet">
 
     <style>
-        :root {
-            --bg-color: #0f172a;
-            --card-width: 360px;
-        }
-
+        :root { --bg-color: #0f172a; --card-width: 360px; }
         * { box-sizing: border-box; }
+        body { margin: 0; padding: 0; background: var(--bg-color); color: white; font-family: 'Chakra Petch', sans-serif; overflow-x: hidden; transition: background-color 0.5s ease; padding-bottom: 90px; }
 
-        body {
-            margin: 0; padding: 0;
-            background: var(--bg-color);
-            color: white;
-            font-family: 'Chakra Petch', sans-serif;
-            overflow-x: hidden;
-            transition: background-color 0.5s ease;
-            padding-bottom: 90px;
-        }
-
-        /* --- LOBBY --- */
-        #lobby {
-            position: fixed; inset: 0; z-index: 9999;
-            background: rgba(15, 23, 42, 0.98);
-            display: flex; justify-content: center; align-items: center;
-            overflow-y: auto;
-        }
-        .lobby-card {
-            background: white; color: #333;
-            padding: 25px; border-radius: 20px;
-            width: 90%; max-width: 450px; text-align: center;
-            box-shadow: 0 20px 50px black;
-            border: 5px solid #fff;
-            margin: 20px 0;
-        }
+        /* LOBBY */
+        #lobby { position: fixed; inset: 0; z-index: 9999; background: rgba(15, 23, 42, 0.98); display: flex; justify-content: center; align-items: center; overflow-y: auto; }
+        .lobby-card { background: white; color: #333; padding: 25px; border-radius: 20px; width: 90%; max-width: 450px; text-align: center; box-shadow: 0 20px 50px black; border: 5px solid #fff; margin: 20px 0; }
         h1 { font-family: 'Titan One', cursive; font-size: 3rem; margin: 0 0 10px 0; line-height: 1; color: #0f172a; }
         
         .lobby-tabs { display: flex; margin-bottom: 15px; background: #e2e8f0; padding: 4px; border-radius: 10px; }
@@ -55,154 +29,46 @@
 
         .control-group { margin: 12px 0; text-align: left; }
         label { display: block; font-weight: bold; margin-bottom: 4px; text-transform: uppercase; font-size: 0.7rem; color: #666; letter-spacing: 1px; }
-        input, select {
-            width: 100%; padding: 10px;
-            border: 2px solid #cbd5e1; border-radius: 8px;
-            font-size: 1rem; font-weight: bold; font-family: 'Chakra Petch', sans-serif;
-            outline: none;
-        }
+        input, select { width: 100%; padding: 10px; border: 2px solid #cbd5e1; border-radius: 8px; font-size: 1rem; font-weight: bold; font-family: 'Chakra Petch', sans-serif; outline: none; }
         
-        .lobby-btn {
-            width: 100%; padding: 15px; font-size: 1.3rem;
-            font-family: 'Titan One', cursive;
-            border: none; border-radius: 10px; cursor: pointer;
-            transition: transform 0.1s; margin-top: 10px;
-        }
+        .lobby-btn { width: 100%; padding: 15px; font-size: 1.3rem; font-family: 'Titan One', cursive; border: none; border-radius: 10px; cursor: pointer; transition: transform 0.1s; margin-top: 10px; }
         .lobby-btn:active { transform: scale(0.95); }
         .lobby-btn:disabled { background: #94a3b8; cursor: not-allowed; opacity: 0.7; }
         .btn-host { background: #3b82f6; color: white; }
         .btn-join { background: #10b981; color: white; }
 
-        /* --- SPLIT FEED --- */
-        #feed-container {
-            width: 95%; max-width: 900px;
-            margin: 10px auto 0 auto;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            border-radius: 12px;
-            overflow: hidden;
-            background: #1e293b;
-            border: 2px solid #334155;
-            display: flex; flex-direction: column;
-        }
-
-        #active-games-bar {
-            background: #0f172a; padding: 8px;
-            display: flex; justify-content: center; gap: 10px; overflow-x: auto;
-            border-bottom: 2px solid #334155;
-            min-height: 46px; 
-        }
-        .score-pill {
-            background: #1e293b; padding: 5px 12px; border-radius: 20px;
-            border: 1px solid #475569; color: white; font-weight: bold; font-size: 0.9rem;
-            display: flex; align-items: center; gap: 10px; white-space: nowrap;
-        }
+        /* FEED */
+        #feed-container { width: 95%; max-width: 900px; margin: 10px auto 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-radius: 12px; overflow: hidden; background: #1e293b; border: 2px solid #334155; display: flex; flex-direction: column; }
+        #active-games-bar { background: #0f172a; padding: 8px; display: flex; justify-content: center; gap: 10px; overflow-x: auto; border-bottom: 2px solid #334155; min-height: 46px; }
+        .score-pill { background: #1e293b; padding: 5px 12px; border-radius: 20px; border: 1px solid #475569; color: white; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; gap: 10px; white-space: nowrap; }
         .score-pill img { width: 24px; height: 24px; border-radius: 50%; background: white; padding: 2px; }
-
+        
         #feed-split { display: flex; height: 180px; }
-        #feed-live {
-            flex: 6; background: #1e293b; overflow-y: scroll;
-            border-right: 2px solid #334155;
-            display: flex; flex-direction: column-reverse; padding: 8px;
-        }
-        #feed-board {
-            flex: 4; background: #0f172a; overflow-y: scroll;
-            display: flex; flex-direction: column; padding: 8px;
-        }
+        #feed-live { flex: 6; background: #1e293b; overflow-y: scroll; border-right: 2px solid #334155; display: flex; flex-direction: column-reverse; padding: 8px; }
+        #feed-board { flex: 4; background: #0f172a; overflow-y: scroll; display: flex; flex-direction: column; padding: 8px; }
+        .feed-header { position: sticky; top: 0; background: rgba(15,23,42,0.9); color: #94a3b8; font-size: 0.7rem; font-weight: bold; text-align: center; padding: 4px; text-transform: uppercase; letter-spacing: 1px; z-index: 5; border-bottom: 1px solid #334155; }
         
-        .feed-header { 
-            position: sticky; top: 0; background: rgba(15,23,42,0.9); 
-            color: #94a3b8; font-size: 0.7rem; font-weight: bold; 
-            text-align: center; padding: 4px; text-transform: uppercase; letter-spacing: 1px;
-            z-index: 5; border-bottom: 1px solid #334155;
-        }
-
-        .live-item {
-            display: flex; align-items: center; gap: 8px;
-            padding: 8px; margin-bottom: 6px; 
-            border-radius: 8px; min-height: 50px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-            background: #334155; 
-            width: 100%; 
-        }
-        
-        .feed-logo { 
-            width: 32px; height: 32px; min-width: 32px; 
-            object-fit: contain; background: white; border-radius: 50%; 
-            padding: 2px; border: 2px solid rgba(255,255,255,0.5); 
-            flex-shrink: 0; 
-        }
-        
-        .feed-text-bubble {
-            background: white; color: #333; 
-            padding: 8px 12px; border-radius: 12px;
-            font-size: 0.8rem; line-height: 1.2; font-weight: 700; 
-            flex: 1; min-width: 0; word-wrap: break-word; overflow-wrap: break-word;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-        
+        .live-item { display: flex; align-items: center; gap: 8px; padding: 8px; margin-bottom: 6px; border-radius: 8px; min-height: 50px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); background: #334155; width: 100%; }
+        .feed-logo { width: 32px; height: 32px; min-width: 32px; object-fit: contain; background: white; border-radius: 50%; padding: 2px; border: 2px solid rgba(255,255,255,0.5); flex-shrink: 0; }
+        .feed-text-bubble { background: white; color: #333; padding: 8px 12px; border-radius: 12px; font-size: 0.8rem; line-height: 1.2; font-weight: 700; flex: 1; min-width: 0; word-wrap: break-word; overflow-wrap: break-word; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
         .live-item.hunt .feed-text-bubble { background: #fef08a; border: 2px solid #eab308; }
 
-        .call-item {
-            background: #10b981; color: #064e3b; 
-            padding: 6px; margin-bottom: 4px; border-radius: 4px;
-            font-size: 0.75rem; font-weight: 800; text-align: center;
-            text-transform: uppercase; animation: flashIn 0.5s;
-        }
+        .call-item { background: #10b981; color: #064e3b; padding: 6px; margin-bottom: 4px; border-radius: 4px; font-size: 0.75rem; font-weight: 800; text-align: center; text-transform: uppercase; animation: flashIn 0.5s; }
         @keyframes flashIn { from { transform: scale(0.1); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
-        /* --- GAME BOARD --- */
-        #game-board {
-            display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start;
-            padding: 40px 10px 80px 10px; gap: 40px; width: 100%; min-height: 100vh;
-        }
-
-        .player-zone {
-            background: #fff; border-radius: 20px; padding: 20px;
-            display: flex; flex-direction: column; align-items: center;
-            border: 8px solid #333; box-shadow: 0 15px 40px rgba(0,0,0,0.6);
-            position: relative; margin-top: 60px; width: auto;
-            min-height: 400px; 
-        }
-        
+        /* GAME BOARD */
+        #game-board { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; padding: 40px 10px 80px 10px; gap: 40px; width: 100%; min-height: 100vh; }
+        .player-zone { background: #fff; border-radius: 20px; padding: 20px; display: flex; flex-direction: column; align-items: center; border: 8px solid #333; box-shadow: 0 15px 40px rgba(0,0,0,0.6); position: relative; margin-top: 60px; width: auto; min-height: 400px; }
         .player-header { margin-top: -80px; display: flex; flex-direction: column; align-items: center; margin-bottom: 15px; z-index: 10; }
-        .team-logo-wrap {
-            width: 100px; height: 100px; background: white; border-radius: 50%;
-            border: 5px solid white; box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-            display: flex; justify-content: center; align-items: center; z-index: 2;
-        }
+        .team-logo-wrap { width: 100px; height: 100px; background: white; border-radius: 50%; border: 5px solid white; box-shadow: 0 5px 15px rgba(0,0,0,0.3); display: flex; justify-content: center; align-items: center; z-index: 2; }
         .team-logo { width: 70px; height: 70px; object-fit: contain; }
-        .player-name {
-            font-family: 'Titan One', cursive; font-size: 1.8rem; text-transform: uppercase;
-            color: white; padding: 8px 25px 5px 25px; border-radius: 30px;
-            border: 4px solid white; margin-top: -20px; z-index: 1;
-            text-shadow: 2px 2px 0 rgba(0,0,0,0.3); white-space: nowrap;
-        }
-        .trivia-badge {
-            background: #fbbf24; color: black; font-weight: bold; font-size: 0.8rem;
-            padding: 2px 10px; border-radius: 10px; margin-top: -8px; 
-            border: 2px solid white; z-index: 3;
-        }
+        .player-name { font-family: 'Titan One', cursive; font-size: 1.8rem; text-transform: uppercase; color: white; padding: 8px 25px 5px 25px; border-radius: 30px; border: 4px solid white; margin-top: -20px; z-index: 1; text-shadow: 2px 2px 0 rgba(0,0,0,0.3); white-space: nowrap; }
 
-        /* GRID */
         .single-card-wrap { width: var(--card-width); }
-        .bingo-grid-container {
-            background: #000; border-radius: 12px 12px 0 0; overflow: hidden;
-            border: 3px solid #000; border-bottom: none;
-        }
+        .bingo-grid-container { background: #000; border-radius: 12px 12px 0 0; overflow: hidden; border: 3px solid #000; border-bottom: none; }
         .card-label { text-align: center; padding: 6px; font-weight: 900; color: white; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 2px; }
-        
         .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; background: #94a3b8; }
-        .cell { 
-            background: #f8fafc; color: #1e293b; 
-            display: flex; align-items: center; justify-content: center; 
-            text-align: center; font-size: 9px; padding: 2px;
-            font-weight: 700; line-height: 1.1; 
-            aspect-ratio: 1/1; 
-            user-select: none; hyphens: auto;
-            transition: background 0.2s;
-            cursor: default;
-        }
-        
+        .cell { background: #f8fafc; color: #1e293b; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 9px; padding: 2px; font-weight: 700; line-height: 1.1; aspect-ratio: 1/1; user-select: none; hyphens: auto; transition: background 0.2s; cursor: default; }
         .cell.free { background: #1e293b !important; display: flex; align-items: center; justify-content: center; }
         .cell.unlocked { cursor: pointer; }
         .cell.unlocked:active { background: #cbd5e1; }
@@ -210,52 +76,24 @@
         .cell.win { z-index: 5; box-shadow: 0 0 15px #fbbf24; animation: pulse 1s infinite; }
         @keyframes pulse { 0%{transform:scale(1);} 50%{transform:scale(1.05);} 100%{transform:scale(1);} }
 
-        /* FOOTER */
-        .card-footer {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 10px 15px; border-radius: 0 0 12px 12px;
-            font-weight: bold; font-size: 1rem;
-            border: 3px solid #000; border-top: none;
-        }
-        .btn-card-action {
-            width: auto; min-width: 90px; color: #333; border: 2px solid white;
-            padding: 6px 14px; border-radius: 6px; cursor: pointer;
-            font-family: 'Titan One'; font-size: 0.9rem; text-transform: uppercase;
-            background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
-        .btn-use { color: #d946ef; }
-        .btn-use:disabled { background: #ccc; color: #666; cursor: default; }
+        .card-footer { display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; border-radius: 0 0 12px 12px; font-weight: bold; font-size: 1rem; border: 3px solid #000; border-top: none; }
+        .btn-card-action { width: auto; min-width: 90px; color: #333; border: 2px solid white; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-family: 'Titan One'; font-size: 0.9rem; text-transform: uppercase; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .btn-use { color: #d946ef; } .btn-use:disabled { background: #ccc; color: #666; cursor: default; }
 
-        /* CONTROLS */
-        #footer-controls {
-            position: fixed; bottom: 15px; left: 50%; transform: translateX(-50%);
-            background: white; padding: 8px 20px; border-radius: 50px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; gap: 10px; 
-            width: 90%; max-width: 600px; justify-content: space-between; z-index: 1000;
-        }
+        #footer-controls { position: fixed; bottom: 15px; left: 50%; transform: translateX(-50%); background: white; padding: 8px 20px; border-radius: 50px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; gap: 10px; width: 90%; max-width: 600px; justify-content: space-between; z-index: 1000; }
         .btn-footer { padding: 6px 14px; font-size: 0.9rem; border-radius: 20px; background: #64748b; color: white; border: none; font-weight: 800; font-family: 'Chakra Petch'; cursor: pointer; }
-        
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 7000; display: none; justify-content: center; align-items: center; }
         .modal-content { background: white; padding: 30px; border-radius: 20px; width: 90%; max-width: 500px; text-align: center; color: #333; border: 5px solid #fff; max-height: 80vh; overflow-y: auto; }
-
         #winner-modal { display:none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; padding: 40px; border-radius: 30px; box-shadow: 0 0 100px #fbbf24; text-align: center; z-index: 9000; border: 10px solid #fbbf24; animation: popIn 0.5s; }
         @keyframes popIn { from{transform:translate(-50%, -50%) scale(0.1);} to{transform:translate(-50%, -50%) scale(1);} }
-        
         #celebration { position: fixed; inset: 0; pointer-events: none; z-index: 99999; overflow: hidden; }
         .confetti { position: absolute; animation: spinFly 6s linear infinite; }
-        .football { font-size: 5rem; }
-        .logo-confetti { width: 80px; height: 80px; object-fit: contain; }
+        .football { font-size: 5rem; } .logo-confetti { width: 80px; height: 80px; object-fit: contain; }
         @keyframes spinFly { from { transform: translate(-100px, 100vh) rotate(0deg); } to { transform: translate(120vw, -200px) rotate(720deg); } }
-
         .hidden { display: none !important; }
         .waiting-msg { width: 100%; text-align: center; margin-top: 100px; font-size: 1.5rem; opacity: 0.5; animation: pulse 2s infinite; }
         #error-banner { position: fixed; top:0; left:0; width:100%; background:red; color:white; text-align: center; padding: 10px; z-index: 10000; display: none; font-size: 0.8rem;}
-
-        /* TIER LIST */
-        .tier-list { text-align: left; margin-bottom: 15px; }
-        .tier-head { font-weight: bold; padding: 5px; color: white; border-radius: 5px; margin-bottom: 5px; }
-        .tier-items { font-size: 0.85rem; line-height: 1.4; color: #555; padding-left: 5px; }
-
+        .tier-list { text-align: left; margin-bottom: 15px; } .tier-head { font-weight: bold; padding: 5px; color: white; border-radius: 5px; margin-bottom: 5px; } .tier-items { font-size: 0.85rem; line-height: 1.4; color: #555; padding-left: 5px; }
     </style>
 </head>
 <body>
@@ -270,7 +108,6 @@
     <div id="info-modal" class="modal-overlay">
         <div class="modal-content">
             <h2>OFFICIAL CALL LIST</h2>
-            <p style="font-size:0.8rem; color:#666; margin-bottom:15px;">Only these events can be auto-detected from the Game Feed.</p>
             <div id="info-list"></div>
             <button onclick="document.getElementById('info-modal').style.display='none'" style="width:100%; background:#333; color:white; padding:15px; border:none; border-radius:10px; margin-top:10px; cursor:pointer;">CLOSE</button>
         </div>
@@ -280,7 +117,7 @@
     <div id="lobby">
         <div class="lobby-card">
             <h1>NFL BEANO</h1>
-            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 16.5 &bull; TEST MODE</p>
+            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 17.0 &bull; REPAIRED</p>
 
             <div class="lobby-tabs">
                 <button class="tab-btn active" id="tab-host" onclick="switchTab('host')">HOST</button>
@@ -310,6 +147,7 @@
                     <select id="game-selector" onchange="checkHostReady()">
                         <option value="" disabled selected>Loading Schedule...</option>
                     </select>
+                    <div id="no-games-msg" style="color:red; display:none; font-size:0.8rem;">No active games found.</div>
                 </div>
 
                 <div class="control-group" id="code-group">
@@ -322,7 +160,7 @@
         </div>
     </div>
 
-    <!-- SPLIT FEED -->
+    <!-- FEED & BOARD -->
     <div id="feed-container" class="hidden">
         <div id="active-games-bar"></div>
         <div id="feed-split">
@@ -335,10 +173,7 @@
             </div>
         </div>
     </div>
-
-    <!-- GAME BOARD -->
     <div id="game-board"></div>
-
     <div id="footer-controls" class="hidden">
         <div class="footer-left">
             <span id="room-label" style="color:#333; font-weight:900;"></span>
@@ -350,7 +185,6 @@
             <button id="reset-btn" class="btn-footer" onclick="resetAll()" style="background:#ef4444; color:white; display:none;">RESET</button>
         </div>
     </div>
-
     <div id="celebration"></div>
 
 <script>
@@ -364,10 +198,10 @@
 
     const WINS = [[0,1,2,3,4],[5,6,7,8,9],[10,11,12,13,14],[15,16,17,18,19],[20,21,22,23,24],[0,5,10,15,20],[1,6,11,16,21],[2,7,12,17,22],[3,8,13,18,23],[4,9,14,19,24],[0,6,12,18,24],[4,8,12,16,20]];
     const BROKER = 'wss://broker.emqx.io:8084/mqtt';
-    const TOPIC_PRE = 'nfl_beano_v16_5';
+    const TOPIC_PRE = 'nfl_beano_v17_0';
 
     let client, myId = 'p' + Math.random().toString(36).substr(2,6);
-    let myName, myTeam, roomCode, isHost;
+    let myName, myTeam, roomCode, isHost = true; // Default to true
     let focusMode = false;
     let currentWinnerName = null;
     let gameState = { players: {}, calls: [] }; 
@@ -396,16 +230,16 @@
             const btn = document.getElementById('action-btn');
             const setup = document.getElementById('setup-area');
             const join1 = document.getElementById('join-step-1');
-            const hostCode = document.getElementById('code-group');
             const feedGroup = document.getElementById('feed-group');
+            const codeGroup = document.getElementById('code-group');
             const roomIn = document.getElementById('room-input');
 
             if(mode === 'host') {
                 isHost = true;
                 join1.style.display = 'none';
                 setup.style.display = 'block';
-                hostCode.style.display = 'block';
                 feedGroup.style.display = 'block';
+                codeGroup.style.display = 'block';
                 
                 roomIn.value = Math.random().toString(36).substr(2,4).toUpperCase();
                 roomIn.disabled = true;
@@ -413,16 +247,14 @@
                 btn.style.display = 'block';
                 btn.className = 'lobby-btn btn-host'; 
                 btn.innerText = 'START GAME'; 
-                btn.onclick = () => initGame(true);
-                
                 checkHostReady(); 
             } else {
                 isHost = false;
                 setup.style.display = 'none';
-                hostCode.style.display = 'none';
                 feedGroup.style.display = 'none'; 
+                codeGroup.style.display = 'none';
                 btn.style.display = 'none'; 
-                join1.style.display = 'block'; 
+                join1.style.display = 'block'; // Show Code Input First
             }
         };
         switchTab('host');
@@ -431,6 +263,8 @@
     window.joinNext = function() {
         const code = document.getElementById('room-input-join').value.trim().toUpperCase();
         if(code.length !== 4) return alert("Please enter a 4-letter Room Code.");
+        
+        // COPY CODE TO MAIN INPUT
         const roomIn = document.getElementById('room-input');
         roomIn.value = code;
         
@@ -444,7 +278,6 @@
         btn.className = 'lobby-btn btn-join';
         btn.innerText = 'JOIN GAME';
         btn.disabled = false; 
-        btn.onclick = () => initGame(false);
     };
 
     async function fetchGamesList() {
@@ -453,10 +286,7 @@
             const resp = await fetch('https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard');
             const data = await resp.json();
             sel.innerHTML = `<option value="" selected>Select Game...</option>`;
-            
-            // ALWAYS ADD TEST MODE
-            sel.innerHTML += `<option value="TEST">⚡ SIMULATION (Test Mode)</option>`;
-            
+            sel.innerHTML += `<option value="TEST">⚡ SIMULATION (Test Mode)</option>`; // ALWAYS ADD TEST
             if(data.events) {
                 const now = new Date();
                 data.events.forEach(e => {
@@ -488,17 +318,17 @@
     document.getElementById('username').addEventListener('keyup', checkHostReady);
     document.getElementById('game-selector').addEventListener('change', checkHostReady);
 
-    function initGame(host) {
+    function initGame() {
         const nameInput = document.getElementById('username').value.trim();
         if(!nameInput) return alert("Enter Name");
         myName = nameInput;
         myTeam = document.getElementById('lobby-team').value;
-        isHost = host;
 
-        if(host) {
+        // Uses Global isHost set by Tabs
+        if(isHost) {
             myGameId = document.getElementById('game-selector').value;
             if(!myGameId) return alert("Host must select a live game feed.");
-            roomCode = document.getElementById('room-input-host').value;
+            roomCode = document.getElementById('room-input').value;
         } else {
             roomCode = document.getElementById('room-input').value.trim().toUpperCase();
             if(!roomCode) roomCode = document.getElementById('room-input-join').value.trim().toUpperCase();
@@ -510,7 +340,7 @@
         document.getElementById('feed-container').classList.remove('hidden');
         document.getElementById('footer-controls').classList.remove('hidden');
         document.getElementById('room-label').innerText = roomCode;
-        if(host) document.getElementById('reset-btn').style.display = 'block';
+        if(isHost) document.getElementById('reset-btn').style.display = 'block';
         document.getElementById('ingame-team').value = myTeam;
         
         render(); 
@@ -540,7 +370,6 @@
         pollGame(gid); 
     }
 
-    // --- SIMULATION ENGINE ---
     function startSimPoller() {
         setInterval(() => {
             const allEvts = [...TIERS.common.items, ...TIERS.uncommon.items, ...TIERS.rare.items];
@@ -549,7 +378,6 @@
             const t1 = teams[Math.floor(Math.random()*teams.length)];
             const t2 = teams[Math.floor(Math.random()*teams.length)];
             
-            // FAKE PAYLOAD
             const payload = {
                 type: 'FEED_ITEM',
                 events: [evt],
@@ -567,9 +395,8 @@
             addFeedItem(payload); 
             render();
             
-        }, 8000); // New fake play every 8 seconds
+        }, 8000);
         
-        // Mock Scoreboard
         const scorePayload = { type: 'SCORE_UPDATE', gid: 'TEST', html: `<div class="sb-team">SIMULATION MODE</div>` };
         send(scorePayload);
         updateScoreboard(scorePayload);
@@ -614,7 +441,7 @@
                 processedPlays[gid] = lastPlay.id;
                 const analyzed = analyzePlay(lastPlay.text, lastPlay.type?.text || "");
                 
-                // CORRECT LOGIC: Send Abbreviations (hTeam/aTeam), let Client lookup logo
+                // Payload
                 const payload = { 
                     type: 'FEED_ITEM', 
                     events: analyzed, 
@@ -701,7 +528,6 @@
         if(msg.hunt) { 
             div.className += ' hunt'; div.innerText = msg.text; 
         } else {
-            // SAFE LOOKUP
             const l1 = (TEAMS[msg.t1] && TEAMS[msg.t1].l) ? TEAMS[msg.t1].l : (msg.l1 || 'nfl.svg');
             const l2 = (TEAMS[msg.t2] && TEAMS[msg.t2].l) ? TEAMS[msg.t2].l : (msg.l2 || 'nfl.svg');
             
@@ -840,6 +666,7 @@
         client.on('message', (tpc, m) => {
             try {
                 const msg = JSON.parse(m.toString());
+                
                 if(msg.type === 'FEED_ITEM') { 
                     addFeedItem(msg); 
                     if(msg.calls) { gameState.calls = msg.calls; render(); } 
