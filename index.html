@@ -1,15 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <!-- 
-    NFL BEANO v17.1
-    - FIX: Switched Replay Game ID to Super Bowl LVIII (401547660) for data stability.
-    - FIX: Added null-checks in Replay Engine to prevent "Internal Error" crashes.
-    - CORE: All previous stable logic retained.
+    NFL BEANO v16.3
+    - FIX: Replay Mode now grabs real Team IDs (Fixes broken logos).
+    - FIX: Replay Mode updates Scoreboard/Game Badge.
+    - FIX: Replay Speed set to 20 seconds.
+    - LAYOUT: Moved Feed Headers outside scrollable area to prevent visual glitching.
 -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NFL BEANO v17.1</title>
+    <title>NFL BEANO v16.3</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Titan+One&display=swap" rel="stylesheet">
 
@@ -72,7 +73,7 @@
         .btn-host { background: #3b82f6; color: white; }
         .btn-join { background: #10b981; color: white; }
 
-        /* --- SPLIT FEED --- */
+        /* --- SPLIT FEED (Refined) --- */
         #feed-container {
             width: 95%; max-width: 900px;
             margin: 10px auto 0 auto;
@@ -98,21 +99,28 @@
         .score-pill img { width: 24px; height: 24px; border-radius: 50%; background: white; padding: 2px; }
 
         #feed-split { display: flex; height: 180px; }
+        
+        /* Containers for the columns */
+        .feed-col { flex: 1; display: flex; flex-direction: column; height: 100%; }
+        #feed-left-col { flex: 6; border-right: 2px solid #334155; }
+        #feed-right-col { flex: 4; }
+
+        /* Scrollable Areas */
         #feed-live {
-            flex: 6; background: #1e293b; overflow-y: scroll;
-            border-right: 2px solid #334155;
+            flex: 1; background: #1e293b; overflow-y: scroll;
             display: flex; flex-direction: column-reverse; padding: 8px;
         }
         #feed-board {
-            flex: 4; background: #0f172a; overflow-y: scroll;
+            flex: 1; background: #0f172a; overflow-y: scroll;
             display: flex; flex-direction: column; padding: 8px;
         }
         
+        /* Header outside scroll */
         .feed-header { 
-            position: sticky; top: 0; background: rgba(15,23,42,0.9); 
+            background: rgba(15,23,42,1); 
             color: #94a3b8; font-size: 0.7rem; font-weight: bold; 
-            text-align: center; padding: 4px; text-transform: uppercase; letter-spacing: 1px;
-            z-index: 5; border-bottom: 1px solid #334155;
+            text-align: center; padding: 6px; text-transform: uppercase; letter-spacing: 1px;
+            border-bottom: 1px solid #334155; flex-shrink: 0;
         }
 
         .live-item {
@@ -121,7 +129,7 @@
             border-radius: 8px; min-height: 50px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.3);
             background: #334155; 
-            width: 100%; 
+            width: 100%; flex-shrink: 0;
         }
         
         .feed-logo { 
@@ -145,7 +153,7 @@
             background: #10b981; color: #064e3b; 
             padding: 6px; margin-bottom: 4px; border-radius: 4px;
             font-size: 0.75rem; font-weight: 800; text-align: center;
-            text-transform: uppercase; animation: flashIn 0.5s;
+            text-transform: uppercase; animation: flashIn 0.5s; flex-shrink: 0;
         }
         @keyframes flashIn { from { transform: scale(0.1); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
@@ -176,7 +184,13 @@
             border: 4px solid white; margin-top: -20px; z-index: 1;
             text-shadow: 2px 2px 0 rgba(0,0,0,0.3); white-space: nowrap;
         }
-        
+        .trivia-badge {
+            background: #fbbf24; color: black; font-weight: bold; font-size: 0.8rem;
+            padding: 2px 10px; border-radius: 10px; margin-top: -8px; 
+            border: 2px solid white; z-index: 3;
+        }
+
+        /* GRID */
         .single-card-wrap { width: var(--card-width); }
         .bingo-grid-container {
             background: #000; border-radius: 12px 12px 0 0; overflow: hidden;
@@ -273,7 +287,7 @@
     <div id="lobby">
         <div class="lobby-card">
             <h1>NFL BEANO</h1>
-            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 17.1 &bull; TEST FIX</p>
+            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 16.3 &bull; REPLAY FIX</p>
 
             <div class="lobby-tabs">
                 <button class="tab-btn active" id="tab-host" onclick="switchTab('host')">HOST</button>
@@ -321,12 +335,17 @@
     <div id="feed-container" class="hidden">
         <div id="active-games-bar"></div>
         <div id="feed-split">
-            <div id="feed-live">
+            <!-- Left Col -->
+            <div class="feed-col" id="feed-left-col">
                 <div class="feed-header">LIVE PLAYS</div>
-                <div style="text-align:center; color:#666; font-size:0.8rem; padding:10px;">Waiting for kickoff...</div>
+                <div id="feed-live">
+                    <div style="text-align:center; color:#666; font-size:0.8rem; padding:10px;">Waiting for kickoff...</div>
+                </div>
             </div>
-            <div id="feed-board">
+            <!-- Right Col -->
+            <div class="feed-col" id="feed-right-col">
                 <div class="feed-header" style="color:#10b981;">OFFICIAL BOARD</div>
+                <div id="feed-board"></div>
             </div>
         </div>
     </div>
@@ -359,7 +378,7 @@
 
     const WINS = [[0,1,2,3,4],[5,6,7,8,9],[10,11,12,13,14],[15,16,17,18,19],[20,21,22,23,24],[0,5,10,15,20],[1,6,11,16,21],[2,7,12,17,22],[3,8,13,18,23],[4,9,14,19,24],[0,6,12,18,24],[4,8,12,16,20]];
     const BROKER = 'wss://broker.emqx.io:8084/mqtt';
-    const TOPIC_PRE = 'nfl_beano_v17_1';
+    const TOPIC_PRE = 'nfl_beano_v16_3';
 
     let client, myId = 'p' + Math.random().toString(36).substr(2,6);
     let myName, myTeam, roomCode, isHost = true; 
@@ -425,6 +444,7 @@
     window.joinNext = function() {
         const code = document.getElementById('room-input-join').value.trim().toUpperCase();
         if(code.length !== 4) return alert("Please enter a 4-letter Room Code.");
+        
         const roomIn = document.getElementById('room-input');
         roomIn.value = code;
         
@@ -448,18 +468,22 @@
             const data = await resp.json();
             sel.innerHTML = `<option value="" selected>Select Game...</option>`;
             
-            // --- UPDATED: USE SUPER BOWL LVIII ID (401547660) FOR RELIABILITY ---
+            // --- UPDATED REPLAY ID (Super Bowl 58) ---
             sel.innerHTML += `<option value="401547660">⚡ INSTANT REPLAY (Test)</option>`;
             
             if(data.events) {
                 const now = new Date();
                 data.events.forEach(e => {
                     const status = e.status.type.state; 
-                    if (status === 'in' || status === 'pre') {
+                    const startTime = new Date(e.date);
+                    const diffMins = (startTime - now) / 60000;
+                    if (status === 'in' || (status === 'pre' && diffMins <= 30)) {
                         sel.innerHTML += `<option value="${e.id}">${e.name} (${status})</option>`;
                     }
                 });
             }
+            if(sel.options.length === 2) sel.innerHTML += `<option disabled>No live games found</option>`;
+            sel.innerHTML += `<option value="">None / Watch Party</option>`;
         } catch(e) { sel.innerHTML = "<option>Error loading games</option>"; }
     }
 
@@ -505,7 +529,7 @@
         connectMQTT();
         
         if(isHost && myGameId) {
-            // FIXED ID CHECK
+            // FIXED: Only call Replay if correct ID, else real poll
             if(myGameId === '401547660') startReplayMode(myGameId); 
             else startPoller(myGameId); 
         }
@@ -523,46 +547,62 @@
         return { events: pool, marked: [12], winLine: [], rerolls: 2 };
     }
 
-    // --- REPLAY ENGINE ---
+    // --- REPLAY ENGINE (FIXED) ---
     async function startReplayMode(gid) {
         try {
             const resp = await fetch(`https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${gid}`);
             const data = await resp.json();
             
-            // Check for valid data
-            if(!data || !data.drives) {
-                alert("No replay data available for this game ID.");
-                return;
+            // Set Scoreboard Header
+            if(data.header) {
+                const comps = data.header.competitions?.[0]?.competitors;
+                let scoreText = "REPLAY MODE";
+                if(comps) {
+                     const hId = comps[0].team.id; const aId = comps[1].team.id;
+                     const hAbbr = TEAM_IDS[hId] || "NFL"; const aAbbr = TEAM_IDS[aId] || "NFL";
+                     const hLogo = TEAMS[hAbbr]?.l || "nfl.svg"; const aLogo = TEAMS[aAbbr]?.l || "nfl.svg";
+                     scoreText = `<div class="sb-team"><img src="logos/${aLogo}"> ${comps[1].score}</div><div class="sb-team">${comps[0].score} <img src="logos/${hLogo}"></div><span class="sb-clock">REPLAY</span>`;
+                }
+                const scorePayload = { type: 'SCORE_UPDATE', gid: gid, html: scoreText };
+                send(scorePayload);
+                updateScoreboard(scorePayload);
             }
 
             let allPlays = [];
-            if(data.drives.previous) {
+            if(data.drives && data.drives.previous) {
                 data.drives.previous.forEach(drive => {
                     if(drive.plays) drive.plays.forEach(play => allPlays.push(play));
                 });
             }
 
+            // Fallback teams for Replay
+            const hID = data.boxscore.teams[0].team.id;
+            const aID = data.boxscore.teams[1].team.id;
+            const hAbbr = TEAM_IDS[hID] || "NFL";
+            const aAbbr = TEAM_IDS[aID] || "NFL";
+
             let playIndex = 0;
             setInterval(() => {
                 if(playIndex >= allPlays.length) return; 
-                
                 let play = allPlays[playIndex];
-                
-                // SAFETY CHECK
-                if(!play || !play.text) {
-                    playIndex++; return;
-                }
+                if(!play || !play.text) { playIndex++; return; }
 
                 const analyzed = analyzePlay(play.text, play.type?.text || "");
                 
-                // Use Generic Fallbacks to avoid crash
-                const t1 = "T1"; const t2 = "T2";
+                // Color Logic for Feed
+                let bgCol = "#334155";
+                let t1Logo = `logos/${TEAMS[hAbbr].l}`;
+                let t2Logo = `logos/${TEAMS[aAbbr].l}`;
+                
+                // Use Home Team Color if available
+                if(TEAMS[hAbbr]) bgCol = TEAMS[hAbbr].c;
                 
                 const payload = { 
                     type: 'FEED_ITEM', 
                     events: analyzed, 
                     text: play.text, 
-                    t1: t1, t2: t2,
+                    bg: bgCol,
+                    l1: t1Logo, l2: t2Logo,
                     calls: gameState.calls 
                 };
 
@@ -576,13 +616,9 @@
                 render();
 
                 playIndex++;
-            }, 5000); 
+            }, 20000); // 20s interval
 
-        } catch(e) { 
-            console.log("Replay Error", e); 
-            // Fallback to avoid silent fail
-            alert("Replay Mode failed to load data.");
-        }
+        } catch(e) { console.log("Replay Error", e); }
     }
 
     // --- LIVE FEED LOGIC ---
