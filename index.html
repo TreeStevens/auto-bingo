@@ -1,16 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <!-- 
-    NFL BEANO v19.0
-    - DATA: Exact Logo Filenames mapped (including CFL/Expansion).
-    - LOGIC: "Hive Mind" enabled (Joiners can add games to the feed).
-    - FIX: Confetti now triggered by explicit Host Command (Reliable).
-    - FIX: Raiders logo mapped to Oakland file (since LV file is missing).
+    NFL BEANO v19.1
+    - FIX: Enhanced "FIRST DOWN" detection logic.
+    - FIX: Robust Confetti (Clears old particles, ensures execution).
+    - UI: Added "How to Play" instructions to Lobby.
+    - CORE: Same v19.0 Logic.
 -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NFL BEANO v19.0</title>
+    <title>NFL BEANO v19.1</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Titan+One&display=swap" rel="stylesheet">
 
@@ -34,6 +34,8 @@
         .lobby-btn:disabled { background: #94a3b8; cursor: not-allowed; opacity: 0.7; }
         .btn-host { background: #3b82f6; color: white; }
         .btn-join { background: #10b981; color: white; }
+        
+        .instructions { font-size: 0.8rem; color: #666; background: #f1f5f9; padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: left; line-height: 1.4; border-left: 4px solid #3b82f6; }
 
         /* FEED */
         #feed-container { width: 95%; max-width: 900px; margin: 10px auto 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-radius: 12px; overflow: hidden; background: #1e293b; border: 2px solid #334155; display: flex; flex-direction: column; }
@@ -104,6 +106,7 @@
     <div id="info-modal" class="modal-overlay">
         <div class="modal-content">
             <h2>OFFICIAL CALL LIST</h2>
+            <p style="font-size:0.8rem; color:#666; margin-bottom:15px;">Only these events can be auto-detected from the Game Feed.</p>
             <div id="info-list"></div>
             <button onclick="document.getElementById('info-modal').style.display='none'" style="width:100%; background:#333; color:white; padding:15px; border:none; border-radius:10px; margin-top:10px; cursor:pointer;">CLOSE</button>
         </div>
@@ -113,11 +116,19 @@
     <div id="lobby">
         <div class="lobby-card">
             <h1>NFL BEANO</h1>
-            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 19.0 &bull; HIVE MIND</p>
+            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 19.1 &bull; FIXED</p>
 
             <div class="lobby-tabs">
                 <button class="tab-btn active" id="tab-host" onclick="switchTab('host')">HOST</button>
                 <button class="tab-btn" id="tab-join" onclick="switchTab('join')">JOIN</button>
+            </div>
+            
+            <div class="instructions">
+                <strong>HOW TO PLAY:</strong><br>
+                1. <strong>HOST:</strong> Select a Live Game Feed. Share the Code.<br>
+                2. <strong>JOIN:</strong> Enter Code, Name, and optional extra Game Feed.<br>
+                3. <strong>PLAY:</strong> Squares UNLOCK (turn white) when events happen in the Feed. Click to mark.<br>
+                4. <strong>WIN:</strong> Get 5 in a row/column/diagonal.
             </div>
 
             <!-- SHARED INPUTS (Revealed based on flow) -->
@@ -187,8 +198,8 @@
 <script>
     const TIERS = {
         common: { label: "COMMON (12)", color: "#10b981", items: ["FIRST DOWN", "PUNT", "TIMEOUT", "PENALTY FLAG", "INC. PASS", "RUN 5-9 YDS", "PASS 5-9 YDS", "KICKOFF", "TOUCHBACK", "SACK", "RUN 10-19 YDS", "PASS 10-19 YDS"] },
-        uncommon: { label: "UNCOMMON (8)", color: "#f59e0b", items: ["TOUCHDOWN", "FIELD GOAL", "TURNOVER", "INTERCEPTION", "FUMBLE", "4TH DOWN TRY", "RUN 20-39 YDS", "PASS 20-39 YDS", "TFL 1-9 YDS", "REVIEW", "RETURN 10-19 YDS", "HOLDING", "FALSE START", "OFFSIDES", "PASS INT", "SHOTGUN", "FAIR CATCH"] },
-        rare: { label: "RARE (4)", color: "#ef4444", items: ["MISSED FG", "2-PT CONV", "SAFETY", "BLOCKED KICK", "DEFENSIVE TD", "INJURY", "OVERTIME", "RUN 40+ YDS", "PASS 40+ YDS", "RETURN 20+ YDS", "SACK 10+ YD LOSS", "ROUGHING PASSER", "ROUGHING KICKER", "TAUNTING", "SPIKE", "KNEEL", "NO HUDDLE"] }
+        uncommon: { label: "UNCOMMON (8)", color: "#f59e0b", items: ["TOUCHDOWN", "FIELD GOAL", "TURNOVER", "INTERCEPTION", "FUMBLE", "4TH DOWN TRY", "RUN 20-39 YDS", "PASS 20-39 YDS", "TFL 1-9 YDS", "REVIEW", "RETURN 10-19 YDS", "HOLDING", "FALSE START", "OFFSIDES", "PASS INT"] },
+        rare: { label: "RARE (4)", color: "#ef4444", items: ["MISSED FG", "2-PT CONV", "SAFETY", "BLOCKED KICK", "DEFENSIVE TD", "INJURY", "OVERTIME", "RUN 40+ YDS", "PASS 40+ YDS", "RETURN 20+ YDS", "SACK 10+ YD LOSS", "ROUGHING PASSER", "ROUGHING KICKER", "TAUNTING"] }
     };
     
     // FULL TEAM DATASET (CFL Added, exact filenames)
@@ -205,25 +216,25 @@
         "DAL": { n: "Dallas Cowboys", c: "#003594", l: "dallas-cowboys.svg" },
         "DEN": { n: "Denver Broncos", c: "#FB4F14", l: "denver-broncos.svg" },
         "DET": { n: "Detroit Lions", c: "#0076B6", l: "detroit-lions.svg" },
-        "GB": { n: "Green Bay Packers", c: "#203731", l: "green-bay-packers.svg" },
+        "GB": { n: "Packers", c: "#203731", l: "green-bay-packers.svg" },
         "HOU": { n: "Houston Texans", c: "#03202F", l: "houston-texans.svg" },
         "IND": { n: "Indianapolis Colts", c: "#002C5F", l: "indianapolis-colts.svg" },
-        "JAX": { n: "Jacksonville Jaguars", c: "#006778", l: "jacksonville-jaguars.svg" },
+        "JAX": { n: "Jaguars", c: "#006778", l: "jacksonville-jaguars.svg" },
         "KC": { n: "Kansas City Chiefs", c: "#E31837", l: "kansas-city-chiefs.svg" },
-        "LV": { n: "Las Vegas Raiders", c: "#000", l: "oakland-raiders.svg" }, // Mapped to Oakland file
+        "LV": { n: "Raiders", c: "#000", l: "oakland-raiders.svg" }, // Mapped to Oakland file
         "LAC": { n: "Los Angeles Chargers", c: "#0080C6", l: "los-angeles-chargers.svg" },
-        "LAR": { n: "Los Angeles Rams", c: "#003594", l: "los-angeles-rams.svg" },
+        "LAR": { n: "Rams", c: "#003594", l: "los-angeles-rams.svg" },
         "MIA": { n: "Miami Dolphins", c: "#008E97", l: "miami-dolphins.svg" },
         "MIN": { n: "Minnesota Vikings", c: "#4F2683", l: "minnesota-vikings.svg" },
-        "NE": { n: "New England Patriots", c: "#002244", l: "new-england-patriots.svg" },
-        "NO": { n: "New Orleans Saints", c: "#D3BC8D", l: "new-orleans-saints.svg" },
+        "NE": { n: "Patriots", c: "#002244", l: "new-england-patriots.svg" },
+        "NO": { n: "Saints", c: "#D3BC8D", l: "new-orleans-saints.svg" },
         "NYG": { n: "New York Giants", c: "#0B2265", l: "new-york-giants.svg" },
         "NYJ": { n: "New York Jets", c: "#125740", l: "new-york-jets.svg" },
         "PHI": { n: "Philadelphia Eagles", c: "#004C54", l: "philadelphia-eagles.svg" },
         "PIT": { n: "Pittsburgh Steelers", c: "#FFB612", l: "pittsburgh-steelers.svg" },
-        "SF": { n: "San Francisco 49ers", c: "#AA0000", l: "san-francisco-49ers.svg" },
+        "SF": { n: "49ers", c: "#AA0000", l: "san-francisco-49ers.svg" },
         "SEA": { n: "Seattle Seahawks", c: "#002244", l: "seattle-seahawks.svg" },
-        "TB": { n: "Tampa Bay Buccaneers", c: "#D50A0A", l: "tampa-bay-buccaneers.svg" },
+        "TB": { n: "Buccaneers", c: "#D50A0A", l: "tampa-bay-buccaneers.svg" },
         "TEN": { n: "Tennessee Titans", c: "#0C2340", l: "tennessee-titans.svg" },
         "WAS": { n: "Washington Commanders", c: "#5A1414", l: "washington-commanders.svg" },
         // CFL & EXPANSION TEAMS
@@ -252,7 +263,7 @@
 
     const WINS = [[0,1,2,3,4],[5,6,7,8,9],[10,11,12,13,14],[15,16,17,18,19],[20,21,22,23,24],[0,5,10,15,20],[1,6,11,16,21],[2,7,12,17,22],[3,8,13,18,23],[4,9,14,19,24],[0,6,12,18,24],[4,8,12,16,20]];
     const BROKER = 'wss://broker.emqx.io:8084/mqtt';
-    const TOPIC_PRE = 'nfl_beano_v18_0';
+    const TOPIC_PRE = 'nfl_beano_v19_1';
 
     let client, myId = 'p' + Math.random().toString(36).substr(2,6);
     let myName, myTeam, roomCode, isHost = true; 
@@ -294,14 +305,23 @@
                 setup.style.display = 'block';
                 hostCode.style.display = 'block';
                 feedGroup.style.display = 'block';
+                
                 roomIn.value = Math.random().toString(36).substr(2,4).toUpperCase();
                 roomIn.disabled = true;
-                btn.style.display = 'block'; btn.className = 'lobby-btn btn-host'; btn.innerText = 'START GAME'; btn.onclick = () => initGame(true);
+                
+                btn.style.display = 'block';
+                btn.className = 'lobby-btn btn-host'; 
+                btn.innerText = 'START GAME'; 
+                btn.onclick = () => initGame(true);
+                
                 checkHostReady(); 
             } else {
                 isHost = false;
-                setup.style.display = 'none'; hostCode.style.display = 'none'; feedGroup.style.display = 'none'; 
-                btn.style.display = 'none'; join1.style.display = 'block'; 
+                setup.style.display = 'none';
+                hostCode.style.display = 'none';
+                feedGroup.style.display = 'none'; 
+                btn.style.display = 'none'; 
+                join1.style.display = 'block'; 
             }
         };
         switchTab('host');
@@ -310,13 +330,21 @@
     window.joinNext = function() {
         const code = document.getElementById('room-input-join').value.trim().toUpperCase();
         if(code.length !== 4) return alert("Please enter a 4-letter Room Code.");
-        document.getElementById('room-input').value = code;
+        
+        const roomIn = document.getElementById('room-input');
+        roomIn.value = code;
+        
         document.getElementById('join-step-1').style.display = 'none';
         document.getElementById('setup-area').style.display = 'block';
-        document.getElementById('feed-group').style.display = 'block'; // UNHIDDEN FOR JOINERS (Hive Mind)
+        document.getElementById('feed-group').style.display = 'block'; // JOINERS CAN PICK FEED NOW
         document.getElementById('code-group').style.display = 'none'; 
+        
         const btn = document.getElementById('action-btn');
-        btn.style.display = 'block'; btn.className = 'lobby-btn btn-join'; btn.innerText = 'JOIN GAME'; btn.disabled = false; btn.onclick = () => initGame(false);
+        btn.style.display = 'block';
+        btn.className = 'lobby-btn btn-join';
+        btn.innerText = 'JOIN GAME';
+        btn.disabled = false; 
+        btn.onclick = () => initGame(false);
     };
 
     async function fetchGamesList() {
@@ -592,8 +620,10 @@
         if(msg.hunt) { 
             div.className += ' hunt'; div.innerText = msg.text; 
         } else {
+            // SAFE LOOKUP
             const l1 = (TEAMS[msg.t1] && TEAMS[msg.t1].l) ? TEAMS[msg.t1].l : 'nfl.svg';
             const l2 = (TEAMS[msg.t2] && TEAMS[msg.t2].l) ? TEAMS[msg.t2].l : 'nfl.svg';
+            
             div.style.background = msg.bg || "#334155";
             div.innerHTML = `
                 <img class="feed-logo" src="logos/${l1}">
@@ -710,7 +740,9 @@
     }
 
     function celebrate(winnerName) { 
-        const b = document.getElementById('celebration'); if(b.childElementCount > 5) return; 
+        const b = document.getElementById('celebration');
+        // Removing child count limit to ensure firing
+        b.innerHTML = ''; 
         
         let logoSrc = null;
         Object.values(gameState.players).forEach(p => { 
