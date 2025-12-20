@@ -1,25 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
 <!--
-REVEAL! v5.0.7
-(Massive Input Fix + Exclusive Footer Mode)
+REVEAL! v5.0.8
+(Functional Fixes: Player Input & Host Timer)
 
-CHANGES IN THIS VERSION (v5.0.7)
-#5 CSS: #guess-input font size increased to 1.5rem. Height locked to 64px.
-#19 LOGIC: openGuess() now hides #game-style-pick and #btn-room-code to give Input 100% width.
-#19 LOGIC: closeGuessUI() restores footer elements.
+CHANGES IN THIS VERSION (v5.0.8)
+#19 LOGIC: Added `isInputOpen` flag to prevent updateUI from auto-closing the guess box.
+#19 LOGIC: Player Guess button now reliably stays open until Send or Close.
+#18 LOGIC: Host Timer now resets explicitly in hostCall() and advanceTurn().
+#5 CSS: Maintained all layout fixes from v5.0.7.
 
 TEST CHECKLIST:
-1. Clicking GUESS hides the Style Picker.
-2. Input box fills the entire bottom width.
-3. Text inside input is large and legible.
-4. Sending/Closing restores the Style Picker.
+1. Player clicks GUESS -> Input box appears and STAYS there.
+2. Host clicks CALL NEXT -> Host's timer resets to 2:00 immediately.
+3. Host clicks WRONG -> Turn passes, timer resets to 2:00 immediately.
 -->
 
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no" />
-<title>REVEAL! v5.0.7</title>
+<title>REVEAL! v5.0.8</title>
 
 <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;700;900&display=swap" rel="stylesheet">
@@ -290,9 +290,9 @@ option { background-color: #fff; color: #000; }
 }
 select.aux-btn{appearance:none; outline:none; color:var(--accent);}
 
-/* WIDE INPUT BAR - EXCLUSIVE MODE */
+/* WIDE INPUT BAR */
 #console-input-wrap{
-  display:none; width:100%; flex:1; gap:10px;
+  display:none; width:100%; flex:1; gap:10px; max-width:800px;
 }
 #guess-input{
   flex:1; height:64px; font-size:1.5rem; background:rgba(0,0,0,0.5); 
@@ -337,7 +337,7 @@ select.aux-btn{appearance:none; outline:none; color:var(--accent);}
 <!-- SCREENS -->
 <div id="screen-lobby" class="screen active">
   <div class="card-panel">
-    <h1>REVEAL! v5.0.7</h1>
+    <h1>REVEAL! v5.0.8</h1>
     <button class="big-btn" onclick="showHostSetup()">HOST GAME</button>
     <button class="big-btn secondary" onclick="showJoinSetup()">JOIN GAME</button>
   </div>
@@ -519,6 +519,7 @@ let gameState = {
 };
 let myClicked = new Set();
 let timerSec=120;
+let isInputOpen = false; // NEW: Track local input state
 const TURN_CHIME = new Audio("chime.mp3"); 
 
 const BROKER = "wss://broker.emqx.io:8084/mqtt";
@@ -532,6 +533,7 @@ function handleMsg(topic, m){
     gameState = msg.state || gameState;
     if(msg.img) gameImg = msg.img;
     
+    // Reset timer on turn switch
     if(getActivePlayerName() !== oldTurn || (oldPhase!=="TURNS" && gameState.phase==="TURNS")){
       timerSec = 120;
     }
@@ -587,6 +589,7 @@ function hostCall(){
   gameState.activeIdx = gameState.roundStartIdx;
   gameState.phase = "TURNS";
   gameState.pendingGuess = null;
+  timerSec = 120; // Explicit Host Reset
   sendState();
 }
 
@@ -612,6 +615,7 @@ function hostJudge(isRight){
 function advanceTurn(){
   gameState.activeIdx = (gameState.activeIdx + 1) % gameState.players.length;
   if(gameState.activeIdx === gameState.roundStartIdx) gameState.phase = "CALL";
+  timerSec = 120; // Explicit Host Reset
 }
 
 function passTurn(){ client.publish(`${TOPIC_PRE}/${roomCode}`, JSON.stringify({type:"PASS", from:myName})); closeGuessUI(); }
@@ -706,10 +710,8 @@ function updateUI(){
   inputCtrl.style.display = "none";
 
   // Hide side controls if input is active
-  const isInputActive = inputCtrl.style.display === "flex";
-  
-  document.getElementById("game-style-pick").style.display = isInputActive ? "none" : "block";
-  document.getElementById("btn-room-code").style.display = "none"; // Default hidden
+  document.getElementById("game-style-pick").style.display = isInputOpen ? "none" : "block";
+  document.getElementById("btn-room-code").style.display = "none"; 
 
   if(isHost){
     hostCtrl.style.display = "flex";
@@ -724,10 +726,12 @@ function updateUI(){
     } else {
       document.getElementById("btn-host-call").style.display="none";
     }
-    // Only show room code if input is NOT active
-    if(!isInputActive) document.getElementById("btn-room-code").style.display="flex";
+    if(!isInputOpen) document.getElementById("btn-room-code").style.display="flex";
   } else {
-    if(gameState.phase==="TURNS" && isActivePlayer(myName) && !isInputActive){
+    // Player Console Logic
+    if(isInputOpen){
+      inputCtrl.style.display = "flex";
+    } else if(gameState.phase==="TURNS" && isActivePlayer(myName)){
       plyrCtrl.style.display = "flex";
     }
   }
@@ -749,15 +753,14 @@ function updateUI(){
 function isActivePlayer(n){ return gameState.players[gameState.activeIdx]?.name === n; }
 function getActivePlayerName(){ return gameState.players[gameState.activeIdx]?.name || ""; }
 function openGuess(){ 
-  document.getElementById("player-controls").style.display="none"; 
-  document.getElementById("console-input-wrap").style.display="flex"; 
-  document.getElementById("guess-input").focus();
-  // Trigger update to apply hiding logic
-  updateUI();
+  isInputOpen = true; 
+  updateUI(); 
+  // Focus after update
+  setTimeout(()=>document.getElementById("guess-input").focus(), 10);
 }
 function closeGuessUI(){ 
+  isInputOpen = false;
   document.getElementById("guess-input").value = "";
-  document.getElementById("console-input-wrap").style.display="none";
   updateUI(); 
 }
 function copyCode(){
