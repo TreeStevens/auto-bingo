@@ -1,15 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <!-- 
-    NFL BEANO v22.1
-    - LOGIC: Single Global Letter for "Letters" Mode (Host Selectable).
-    - UI: Connection Hint moved to footer (Gray/Subtle).
-    - PREVIOUS: Home/Away Split, 3 Cards, Parsing Fixes.
+    NFL BEANO v22.2
+    - DATA: Restored CFL and Historic Teams.
+    - UI: Confetti now has randomized trajectories (scattered arcs) instead of a single line.
 -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NFL BEANO v22.1</title>
+    <title>NFL BEANO v22.2</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Titan+One&display=swap" rel="stylesheet">
 
@@ -90,23 +89,24 @@
         #winner-modal { display:none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; padding: 40px; border-radius: 30px; box-shadow: 0 0 100px #fbbf24; text-align: center; z-index: 9000; border: 10px solid #fbbf24; animation: popIn 0.5s; }
         @keyframes popIn { from{transform:translate(-50%, -50%) scale(0.1);} to{transform:translate(-50%, -50%) scale(1);} }
         
-        /* SLOW ARCING CONFETTI */
+        /* RANDOMIZED CONFETTI */
         #celebration { position: fixed; inset: 0; pointer-events: none; z-index: 99999; overflow: hidden; }
-        .confetti { position: absolute; }
+        .confetti { position: absolute; opacity: 0; }
         .football { font-size: 5rem; } .logo-confetti { width: 80px; height: 80px; object-fit: contain; }
         
-        .confetti-left { left: -100px; bottom: 0; animation: arcLeft 10s ease-out forwards; }
-        .confetti-right { right: -100px; bottom: 0; animation: arcRight 10s ease-out forwards; }
+        .confetti-left { left: 0; bottom: 0; animation: arcLeft 10s ease-out forwards; }
+        .confetti-right { right: 0; bottom: 0; animation: arcRight 10s ease-out forwards; }
 
+        /* Using CSS variables for randomization */
         @keyframes arcLeft { 
-            0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
-            40% { transform: translate(40vw, -80vh) rotate(360deg); opacity: 1; }
-            100% { transform: translate(100vw, 20vh) rotate(720deg); opacity: 0; }
+            0% { transform: translate(0, 0) rotate(0deg) scale(0.5); opacity: 1; }
+            40% { transform: translate(var(--mid-x), var(--mid-y)) rotate(180deg) scale(1); opacity: 1; }
+            100% { transform: translate(var(--end-x), var(--end-y)) rotate(720deg) scale(0.5); opacity: 0; }
         }
         @keyframes arcRight { 
-            0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
-            40% { transform: translate(-40vw, -80vh) rotate(-360deg); opacity: 1; }
-            100% { transform: translate(-100vw, 20vh) rotate(-720deg); opacity: 0; }
+            0% { transform: translate(0, 0) rotate(0deg) scale(0.5); opacity: 1; }
+            40% { transform: translate(var(--mid-x), var(--mid-y)) rotate(-180deg) scale(1); opacity: 1; }
+            100% { transform: translate(var(--end-x), var(--end-y)) rotate(-720deg) scale(0.5); opacity: 0; }
         }
 
         .hidden { display: none !important; }
@@ -137,7 +137,7 @@
     <div id="lobby">
         <div class="lobby-card">
             <h1>NFL BEANO</h1>
-            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 22.1 &bull; LETTERS MODE</p>
+            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 22.2 &bull; IMPROVED</p>
 
             <div class="lobby-tabs">
                 <button class="tab-btn active" id="tab-host" onclick="switchTab('host')">HOST</button>
@@ -300,8 +300,13 @@
         "None": { n: "No Team", c: "#333", l: "nfl.svg" },
         "ARI": { n: "Arizona Cardinals", c: "#97233F", l: "arizona-cardinals.svg" },
         "ATL": { n: "Atlanta Falcons", c: "#A71930", l: "atlanta-falcons.svg" },
+        "SCH": { n: "Atlantic Schooners", c: "#1C2E4A", l: "atlantic-schooners.png" },
         "BAL": { n: "Baltimore Ravens", c: "#241773", l: "baltimore-ravens.svg" },
+        "BALC": { n: "Baltimore Stallions", c: "#002D62", l: "baltimore-stallions.png" },
+        "BCL": { n: "BC Lions", c: "#F15623", l: "bc-lions.png" },
+        "BIR": { n: "Birmingham Barracudas", c: "#008080", l: "birmingham-barracudas.png" },
         "BUF": { n: "Buffalo Bills", c: "#00338D", l: "buffalo-bills.svg" },
+        "CAL": { n: "Calgary Stampeders", c: "#CC202C", l: "calgary-stampeders.png" },
         "CAR": { n: "Carolina Panthers", c: "#0085CA", l: "carolina-panthers.svg" },
         "CHI": { n: "Chicago Bears", c: "#0B162A", l: "chicago-bears.svg" },
         "CIN": { n: "Cincinnati Bengals", c: "#FB4F14", l: "cincinnati-bengals.svg" },
@@ -309,32 +314,45 @@
         "DAL": { n: "Dallas Cowboys", c: "#003594", l: "dallas-cowboys.svg" },
         "DEN": { n: "Denver Broncos", c: "#FB4F14", l: "denver-broncos.svg" },
         "DET": { n: "Detroit Lions", c: "#0076B6", l: "detroit-lions.svg" },
+        "EDM": { n: "Edmonton Elks", c: "#2C5234", l: "edmonton-elks.png" },
         "GB": { n: "Green Bay Packers", c: "#203731", l: "green-bay-packers.svg" },
+        "HAM": { n: "Hamilton Tiger-Cats", c: "#FFB81C", l: "hamilton-tigercats.png" },
         "HOU": { n: "Houston Texans", c: "#03202F", l: "houston-texans.svg" },
         "IND": { n: "Indianapolis Colts", c: "#002C5F", l: "indianapolis-colts.svg" },
         "JAX": { n: "Jacksonville Jaguars", c: "#006778", l: "jacksonville-jaguars.svg" },
         "KC": { n: "Kansas City Chiefs", c: "#E31837", l: "kansas-city-chiefs.svg" },
+        "LVP": { n: "Las Vegas Posse", c: "#000000", l: "las-vegas-posse.png" },
         "LV": { n: "Las Vegas Raiders", c: "#000", l: "oakland-raiders.svg" },
         "LAC": { n: "Los Angeles Chargers", c: "#0080C6", l: "los-angeles-chargers.svg" },
         "LAR": { n: "Los Angeles Rams", c: "#003594", l: "los-angeles-rams.svg" },
+        "MEM": { n: "Memphis Mad Dogs", c: "#004F34", l: "memphis-maddogs.png" },
         "MIA": { n: "Miami Dolphins", c: "#008E97", l: "miami-dolphins.svg" },
         "MIN": { n: "Minnesota Vikings", c: "#4F2683", l: "minnesota-vikings.svg" },
+        "MTL": { n: "Montreal Alouettes", c: "#002D62", l: "montreal-alouettes.png" },
+        "MCON": { n: "Montreal Concordes", c: "#003399", l: "montreal-concordes.png" },
         "NE": { n: "New England Patriots", c: "#002244", l: "new-england-patriots.svg" },
         "NO": { n: "New Orleans Saints", c: "#D3BC8D", l: "new-orleans-saints.svg" },
         "NYG": { n: "New York Giants", c: "#0B2265", l: "new-york-giants.svg" },
         "NYJ": { n: "New York Jets", c: "#125740", l: "new-york-jets.svg" },
+        "OTT": { n: "Ottawa Redblacks", c: "#000000", l: "ottowa-redblacks.png" },
         "PHI": { n: "Philadelphia Eagles", c: "#004C54", l: "philadelphia-eagles.svg" },
         "PIT": { n: "Pittsburgh Steelers", c: "#FFB612", l: "pittsburgh-steelers.svg" },
+        "SAC": { n: "Sacramento Gold Miners", c: "#008080", l: "sacramento-goldminers.png" },
+        "SAT": { n: "San Antonio Texans", c: "#006778", l: "san-antonio-texans.png" },
         "SF": { n: "San Francisco 49ers", c: "#AA0000", l: "san-francisco-49ers.svg" },
+        "SAS": { n: "Saskatchewan Roughriders", c: "#006341", l: "saskatchewan-roughriders.png" },
         "SEA": { n: "Seattle Seahawks", c: "#002244", l: "seattle-seahawks.svg" },
+        "SHR": { n: "Shreveport Pirates", c: "#4B0082", l: "shreveport-pirates.png" },
         "TB": { n: "Tampa Bay Buccaneers", c: "#D50A0A", l: "tampa-bay-buccaneers.svg" },
         "TEN": { n: "Tennessee Titans", c: "#0C2340", l: "tennessee-titans.svg" },
-        "WAS": { n: "Washington Commanders", c: "#5A1414", l: "washington-commanders.svg" }
+        "TOR": { n: "Toronto Argonauts", c: "#00205B", l: "toronto-argonauts.png" },
+        "WAS": { n: "Washington Commanders", c: "#5A1414", l: "washington-commanders.svg" },
+        "WPG": { n: "Winnipeg Blue Bombers", c: "#003594", l: "winnipeg-bluebombers.png" }
     };
     
     const TEAM_IDS = { "22":"ARI", "1":"ATL", "33":"BAL", "2":"BUF", "29":"CAR", "3":"CHI", "4":"CIN", "5":"CLE", "6":"DAL", "7":"DEN", "8":"DET", "9":"GB", "34":"HOU", "11":"IND", "30":"JAX", "12":"KC", "13":"LV", "24":"LAC", "14":"LAR", "15":"MIA", "16":"MIN", "17":"NE", "18":"NO", "19":"NYG", "20":"NYJ", "21":"PHI", "23":"PIT", "25":"SF", "26":"SEA", "27":"TB", "10":"TEN", "28":"WAS" };
     const BROKER = 'wss://broker.emqx.io:8084/mqtt';
-    const TOPIC_PRE = 'nfl_beano_v22_1';
+    const TOPIC_PRE = 'nfl_beano_v22_2';
 
     let client, myId = 'p' + Math.random().toString(36).substr(2,6);
     let myName, myTeam, roomCode, isHost = true; 
@@ -489,7 +507,6 @@
             gameState.mode = document.getElementById('game-mode-select').value;
             gameState.cardsPerPlayer = parseInt(document.getElementById('card-count-select').value);
             
-            // GLOBAL LETTER SELECTION
             if(gameState.mode === 'LETTERS') {
                 let picked = document.getElementById('letter-select').value;
                 if(picked === 'RND') {
@@ -507,7 +524,6 @@
         }
 
         if(isHost) {
-            // Host generates their own cards immediately
             gameState.players[myId] = createPlayerData(myName, myTeam, gameState.cardsPerPlayer, hostGameAbbrs, gameState.targetLetter);
         }
 
@@ -528,8 +544,6 @@
         render(); 
     }
 
-    // GENERATE CARDS
-    // Now accepts 'fixedLetter' to ensure everyone has same goal in Letters Mode
     function createPlayerData(name, team, count, abbrs, fixedLetter) { 
         let cards = [];
         for(let i=0; i<count; i++) cards.push(newCard(abbrs, fixedLetter));
@@ -539,7 +553,6 @@
     function newCard(abbrs, fixedLetter) {
         let isCoverall = (gameState.mode === 'COVERALL');
         
-        // POOL GENERATION
         let pool = [];
         const processTier = (tierItems, limit) => {
             let options = [];
@@ -571,9 +584,7 @@
             pool.splice(12, 0, extra);
         }
 
-        // Letter assignment uses the Global Target if passed
         let letter = fixedLetter || null;
-
         return { events: pool, marked: (!isCoverall ? [12] : []), winLine: [], rerolls: 3, letter: letter };
     }
 
@@ -870,7 +881,7 @@
         let p = gameState.players[myId];
         if(p.cards[cIdx].rerolls > 0 && confirm("Burn 1 Reroll?")) { 
             p.cards[cIdx].rerolls--; 
-            let nc = newCard(hostGameAbbrs, p.cards[cIdx].letter); // Pass existing letter so goal doesn't change
+            let nc = newCard(hostGameAbbrs, p.cards[cIdx].letter); 
             p.cards[cIdx].events = nc.events; 
             p.cards[cIdx].marked = nc.marked; 
             render(); send({ type: 'UPDATE', pData: p }); 
@@ -928,19 +939,51 @@
             } 
         });
 
-        for(let i=0; i<40; i++){ 
-            let f = document.createElement('div'); f.className = 'confetti football confetti-left';
-            f.innerHTML='🏈'; f.style.fontSize=(Math.random()*3+3)+'rem'; 
+        // Loop for Left Side
+        for(let i=0; i<30; i++){ 
+            let f = document.createElement('div'); 
+            f.className = 'confetti football confetti-left';
+            f.innerHTML='🏈'; 
+            f.style.fontSize=(Math.random()*3+3)+'rem'; 
+            
+            // RANDOM TRAJECTORY
+            // Mid: 20-50vw, -60 to -90vh
+            let mx = 20 + Math.random()*30;
+            let my = -60 - Math.random()*30;
+            let ex = 60 + Math.random()*40;
+            let ey = 20 + Math.random()*80;
+
+            f.style.setProperty('--mid-x', mx+'vw');
+            f.style.setProperty('--mid-y', my+'vh');
+            f.style.setProperty('--end-x', ex+'vw');
+            f.style.setProperty('--end-y', ey+'vh');
+            
             f.style.animationDelay = (Math.random()*5)+'s';
             b.appendChild(f);
-            
-            if(logoSrc) {
-                let l = document.createElement('img'); l.className = 'confetti logo-confetti confetti-right';
+        }
+
+        // Loop for Right Side
+        if(logoSrc) {
+            for(let i=0; i<30; i++){ 
+                let l = document.createElement('img'); 
+                l.className = 'confetti logo-confetti confetti-right';
                 l.src = logoSrc;
+                
+                // Mirror logic
+                let mx = -20 - Math.random()*30;
+                let my = -60 - Math.random()*30;
+                let ex = -60 - Math.random()*40;
+                let ey = 20 + Math.random()*80;
+
+                l.style.setProperty('--mid-x', mx+'vw');
+                l.style.setProperty('--mid-y', my+'vh');
+                l.style.setProperty('--end-x', ex+'vw');
+                l.style.setProperty('--end-y', ey+'vh');
+
                 l.style.animationDelay = (Math.random()*5)+'s';
                 b.appendChild(l);
             }
-        } 
+        }
     }
 
     function checkGlobalWin() {
