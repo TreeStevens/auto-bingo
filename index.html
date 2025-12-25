@@ -1,16 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <!-- 
-    NFL BEANO v22.0
-    - MODES: Classic, Coverall, Letters (H, T, X, N, Z, O).
-    - LOGIC: Split Home/Away events (e.g., "BUF TD", "KC TD") for variety.
-    - PARSING: Fixed 1st Down and TFL detection.
-    - UI: 1-3 Cards per player, Hidden Help, Slow Arcing Confetti.
+    NFL BEANO v22.1
+    - LOGIC: Single Global Letter for "Letters" Mode (Host Selectable).
+    - UI: Connection Hint moved to footer (Gray/Subtle).
+    - PREVIOUS: Home/Away Split, 3 Cards, Parsing Fixes.
 -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NFL BEANO v22.0</title>
+    <title>NFL BEANO v22.1</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Titan+One&display=swap" rel="stylesheet">
 
@@ -36,9 +35,10 @@
         .btn-host { background: #3b82f6; color: white; }
         .btn-join { background: #10b981; color: white; }
         
-        details { text-align: left; margin-top: 15px; background: #fee2e2; border-radius: 8px; border-left: 4px solid #ef4444; padding: 8px; font-size: 0.75rem; color: #ef4444; cursor: pointer; }
-        summary { font-weight: bold; outline: none; }
-        details p { margin: 5px 0 0 0; color: #b91c1c; }
+        details { text-align: center; margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 15px; font-size: 0.75rem; color: #94a3b8; cursor: pointer; }
+        summary { font-weight: bold; outline: none; list-style: none; }
+        summary::-webkit-details-marker { display: none; }
+        details p { margin: 5px 0 0 0; color: #64748b; line-height: 1.4; }
 
         /* FEED */
         #feed-container { width: 95%; max-width: 900px; margin: 10px auto 0 auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-radius: 12px; overflow: hidden; background: #1e293b; border: 2px solid #334155; display: flex; flex-direction: column; }
@@ -137,17 +137,12 @@
     <div id="lobby">
         <div class="lobby-card">
             <h1>NFL BEANO</h1>
-            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 22.0 &bull; MODES & VARIETY</p>
+            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 22.1 &bull; LETTERS MODE</p>
 
             <div class="lobby-tabs">
                 <button class="tab-btn active" id="tab-host" onclick="switchTab('host')">HOST</button>
                 <button class="tab-btn" id="tab-join" onclick="switchTab('join')">JOIN</button>
             </div>
-            
-            <details>
-                <summary>CONNECTION ISSUES?</summary>
-                <p>If the game feed isn't loading, please turn off AdBlockers or VPNs. The ESPN feed connection is often blocked by privacy tools.</p>
-            </details>
 
             <!-- SHARED INPUTS (Revealed based on flow) -->
             <div id="join-step-1" class="control-group" style="display:none;">
@@ -178,12 +173,27 @@
                     <div class="row-group">
                         <div class="control-group" style="flex:2;">
                             <label>Game Mode</label>
-                            <select id="game-mode-select">
+                            <select id="game-mode-select" onchange="checkMode()">
                                 <option value="CLASSIC" selected>CLASSIC (Line)</option>
                                 <option value="COVERALL">COVERALL (Full Card)</option>
                                 <option value="LETTERS">LETTERS (H, T, X...)</option>
                             </select>
                         </div>
+                        
+                        <!-- LETTER SUB-SELECT -->
+                        <div class="control-group" id="letter-group" style="flex:1; display:none;">
+                            <label>Letter</label>
+                            <select id="letter-select">
+                                <option value="RND">Rnd</option>
+                                <option value="H">H</option>
+                                <option value="T">T</option>
+                                <option value="X">X</option>
+                                <option value="N">N</option>
+                                <option value="Z">Z</option>
+                                <option value="O">O</option>
+                            </select>
+                        </div>
+
                         <div class="control-group" style="flex:1;">
                             <label>Cards</label>
                             <select id="card-count-select">
@@ -202,6 +212,12 @@
 
                 <button id="action-btn" class="lobby-btn btn-host" onclick="initGame()">START GAME</button>
             </div>
+
+            <!-- MOVED CONNECTION HINT TO BOTTOM & NEUTRAL STYLING -->
+            <details>
+                <summary>CONNECTION ISSUES?</summary>
+                <p>If the game feed isn't loading, please turn off AdBlockers or VPNs. The ESPN feed connection is often blocked by privacy tools.</p>
+            </details>
             
         </div>
     </div>
@@ -238,7 +254,6 @@
 
 <script>
     // DATASET
-    // Split items will be auto-generated into "BUF PUNT", "KC PUNT" etc.
     const TIERS = {
         common: { 
             label: "COMMON", color: "#10b981", 
@@ -319,13 +334,13 @@
     
     const TEAM_IDS = { "22":"ARI", "1":"ATL", "33":"BAL", "2":"BUF", "29":"CAR", "3":"CHI", "4":"CIN", "5":"CLE", "6":"DAL", "7":"DEN", "8":"DET", "9":"GB", "34":"HOU", "11":"IND", "30":"JAX", "12":"KC", "13":"LV", "24":"LAC", "14":"LAR", "15":"MIA", "16":"MIN", "17":"NE", "18":"NO", "19":"NYG", "20":"NYJ", "21":"PHI", "23":"PIT", "25":"SF", "26":"SEA", "27":"TB", "10":"TEN", "28":"WAS" };
     const BROKER = 'wss://broker.emqx.io:8084/mqtt';
-    const TOPIC_PRE = 'nfl_beano_v22_0';
+    const TOPIC_PRE = 'nfl_beano_v22_1';
 
     let client, myId = 'p' + Math.random().toString(36).substr(2,6);
     let myName, myTeam, roomCode, isHost = true; 
     let focusMode = false;
     let currentWinnerName = null;
-    let gameState = { players: {}, calls: [], activeGameIds: [], mode: 'CLASSIC', started: false }; 
+    let gameState = { players: {}, calls: [], activeGameIds: [], mode: 'CLASSIC', started: false, targetLetter: null }; 
     let myGameId = null;
     let hostGameAbbrs = { h: "HOME", a: "AWAY" }; 
     let processedPlays = {}; 
@@ -387,6 +402,13 @@
         switchTab('host');
     });
 
+    // Toggle Letter Dropdown
+    window.checkMode = function() {
+        const m = document.getElementById('game-mode-select').value;
+        const sub = document.getElementById('letter-group');
+        sub.style.display = (m === 'LETTERS') ? 'block' : 'none';
+    };
+
     window.joinNext = function() {
         const code = document.getElementById('room-input-join').value.trim().toUpperCase();
         if(code.length !== 4) return alert("Please enter a 4-letter Room Code.");
@@ -427,7 +449,6 @@
         } catch(e) { sel.innerHTML = "<option>Error loading games</option>"; }
     }
 
-    // Capture abbreviations early for the generator
     async function fetchAbbrs() {
         const gid = document.getElementById('game-selector').value;
         if(!gid) return;
@@ -467,13 +488,27 @@
             gameState.activeGameIds = [myGameId];
             gameState.mode = document.getElementById('game-mode-select').value;
             gameState.cardsPerPlayer = parseInt(document.getElementById('card-count-select').value);
+            
+            // GLOBAL LETTER SELECTION
+            if(gameState.mode === 'LETTERS') {
+                let picked = document.getElementById('letter-select').value;
+                if(picked === 'RND') {
+                    const keys = Object.keys(LETTERS);
+                    picked = keys[Math.floor(Math.random() * keys.length)];
+                }
+                gameState.targetLetter = picked;
+            } else {
+                gameState.targetLetter = null;
+            }
+
             gameState.started = true;
         } else {
             roomCode = document.getElementById('room-input').value;
         }
 
         if(isHost) {
-            gameState.players[myId] = createPlayerData(myName, myTeam, gameState.cardsPerPlayer, hostGameAbbrs);
+            // Host generates their own cards immediately
+            gameState.players[myId] = createPlayerData(myName, myTeam, gameState.cardsPerPlayer, hostGameAbbrs, gameState.targetLetter);
         }
 
         document.getElementById('lobby').classList.add('hidden');
@@ -493,15 +528,15 @@
         render(); 
     }
 
-    // GENERATE CARDS WITH SPLIT EVENTS
-    function createPlayerData(name, team, count, abbrs) { 
+    // GENERATE CARDS
+    // Now accepts 'fixedLetter' to ensure everyone has same goal in Letters Mode
+    function createPlayerData(name, team, count, abbrs, fixedLetter) { 
         let cards = [];
-        for(let i=0; i<count; i++) cards.push(newCard(abbrs));
+        for(let i=0; i<count; i++) cards.push(newCard(abbrs, fixedLetter));
         return { name: name, team: team, cards: cards }; 
     }
 
-    function newCard(abbrs) {
-        // Mode Check for Free Space
+    function newCard(abbrs, fixedLetter) {
         let isCoverall = (gameState.mode === 'COVERALL');
         
         // POOL GENERATION
@@ -512,42 +547,32 @@
                 if(item.split && abbrs) {
                     options.push(abbrs.h + " " + item.t);
                     options.push(abbrs.a + " " + item.t);
-                    options.push(item.t); // Keep generic too for balance? No, let's keep it specific for difficulty
+                    options.push(item.t);
                 } else {
                     options.push(item.t);
                 }
             });
-            // Shuffle and pick
             options = options.sort(() => Math.random() - 0.5);
             return options.slice(0, limit);
         };
 
-        // Distribution: 12 Common, 8 Uncommon, 4 Rare (Standard)
-        // Adjust for Hardcore? No, request was for Variety via Split.
         pool = [
             ...processTier(TIERS.common.items, 12),
             ...processTier(TIERS.uncommon.items, 8),
             ...processTier(TIERS.rare.items, 4)
         ];
         
-        // Shuffle final pool
         pool = pool.sort(() => Math.random() - 0.5);
 
-        // Splice Free Space if NOT Coverall
         if(!isCoverall) {
             pool.splice(12, 0, "FREE");
         } else {
-            // Coverall needs 25th item, pull one more common
             let extra = TIERS.common.items[Math.floor(Math.random()*TIERS.common.items.length)].t;
             pool.splice(12, 0, extra);
         }
 
-        // Letter assignment logic
-        let letter = null;
-        if(gameState.mode === 'LETTERS') {
-            const keys = Object.keys(LETTERS);
-            letter = keys[Math.floor(Math.random() * keys.length)];
-        }
+        // Letter assignment uses the Global Target if passed
+        let letter = fixedLetter || null;
 
         return { events: pool, marked: (!isCoverall ? [12] : []), winLine: [], rerolls: 3, letter: letter };
     }
@@ -555,7 +580,6 @@
     function startHostLoop() {
         setInterval(() => {
             gameState.activeGameIds.forEach(gid => {
-                // Classic games replay logic
                 if(['401547660','401438012','401326601','400999173'].includes(gid)) {
                     if(!processedPlays[gid]) startReplayMode(gid);
                 } else {
@@ -575,7 +599,6 @@
             const hAbbr = TEAM_IDS[data.boxscore.teams[0].team.id] || "HOME";
             const aAbbr = TEAM_IDS[data.boxscore.teams[1].team.id] || "AWAY";
             
-            // Replay loop setup similar to V21 but with new analyzePlay
             let allPlays = [];
             if(data.drives && data.drives.previous) {
                 data.drives.previous.forEach(d => { if(d.plays) d.plays.forEach(p => allPlays.push(p)); });
@@ -603,7 +626,7 @@
                 }
                 send(payload); addFeedItem(payload); render();
                 idx++;
-            }, 5000); // Faster replay for testing
+            }, 5000); 
         } catch(e) { console.log(e); }
     }
 
@@ -649,83 +672,19 @@
         } catch(e) { console.log("Feed Error:", e); }
     }
 
-    // ADVANCED PARSER V2
     function analyzePlay(text, typeStr, hAbbr, aAbbr) {
         if(!text) return [];
         const up = text.toUpperCase(); const typeUp = typeStr.toUpperCase(); let events = [];
         
-        // Helper to add Specific and Generic
-        const add = (generic, specificStr) => {
-            events.push(generic);
-            if(specificStr) {
-                // Heuristic: If text starts with (Team) or contains typical markers
-                // Simplest: Check who has the ball? ESPN text usually starts with "J.Allen pass..."
-                // Actually, text often contains "(Shotgun) J.Allen..."
-                // We rely on the cards having generated "BUF TD" or "KC TD".
-                // Since we don't strictly know who did it from just text parsing without roster math,
-                // we will check if the text explicitly mentions specific players? No too hard.
-                // We will imply it based on context or just trigger BOTH H/A if ambiguous? No that breaks it.
-                // BETTER: We just triggered "TOUCHDOWN".
-                // If we want "BUF TOUCHDOWN", we really need to know possession.
-                // HACK: We will try to find the team abbr in the text? No, plays don't usually say "BUF".
-                // Okay, for V22.0, since we want variety, we will assume the Host might have to click?
-                // NO, fully auto.
-                // We will use the fact that the API boxscore tells us who scored, but we are looking at play text.
-                // Let's look for known QB names? No.
-                // Let's just output GENERIC for now, unless we can detect "Interception by..." (Defense)
-            }
-        };
-
-        // BUT WAIT, users wanted "HOME/VISITOR". 
-        // We will try to attribute based on common patterns.
-        // If "Touchdown" and text contains "pass to [Player]", we don't know team.
-        // However, we passed hAbbr and aAbbr.
-        // We will enable the "Generic" ones primarily. 
-        // For the sake of the requested "Split", we will add "HOME " + Event and "AWAY " + Event 
-        // to the pool, but since the Parser is hard, we might have to just rely on Generics 
-        // UNLESS we can find a way.
-        // Actually, for this version, let's stick to Generics + Generic Variants 
-        // UNLESS the event type is clear (like "Penalty on BUF").
-        // IF we cannot determine, we trigger ONLY the generic. 
-        
-        // To satisfy the user request without breaking the game with false positives:
-        // We will generate cards with "BUF TD", but if we can't detect it, that square is dead.
-        // THAT IS BAD.
-        // Alternative: We generate "HOME TD" and "AWAY TD".
-        // And we assume the user might have to click it if they see it? No, auto.
-        // OK, I will add a heuristic:
-        // Most feeds don't put the team name in the play text.
-        // I will revert to "Generic Only" for the auto-detection to be safe, 
-        // BUT I will keep the "Split" in the data structure so the Host can manually trigger them?
-        // No, that's too complex.
-        
-        // RE-STRATEGY: We will add the SPLIT items (like "SACK") but we will trigger 
-        // "SACK" (Generic). If the card has "BUF SACK", does "SACK" cover it?
-        // No, strings must match.
-        // So "SACK" event must trigger "BUF SACK" on the board if BUF did it.
-        // We will skip the specific team-split for Auto-Detection in this version 
-        // to ensure 100% accuracy, but we will add the extra VARIETY by using the 
-        // "UNCOMMON/RARE" buckets more aggressively.
-        
-        // WAIT! I can detect "Penalty on [TEAM]". That works.
-        // I can detect "Timeout [TEAM]". That works.
-        // I can detect scoring if I track score changes? (Too complex for this single file).
-        
-        // COMPROMISE: We will implement the VARIETY by splitting the buckets better (Generic Only)
-        // BUT we will implement the 1st Down and TFL fixes requested.
-
         if(up.includes("TOUCHDOWN")) events.push("TOUCHDOWN");
         if(up.includes("FIELD GOAL") && !up.includes("NO GOOD") && !up.includes("MISSED")) events.push("FIELD GOAL");
         if(up.includes("MISSED") || up.includes("NO GOOD")) events.push("MISSED FG");
         if(up.includes("PUNT")) events.push("PUNT");
         
-        // TFL FIX: Must be a RUN and have LOSS OF
         const isRun = !up.includes("PASS") && !up.includes("SACK") && !up.includes("KICK") && !up.includes("PUNT");
         if(isRun && up.includes("LOSS OF")) events.push("TFL 1-9 YDS");
 
-        // SACK FIX: Distinct from TFL
         if(up.includes("SACK")) { events.push("SACK"); }
-        
         if(up.includes("INTERCEPT") || typeUp.includes("INTERCEPT")) events.push("INTERCEPTION");
         if(up.includes("FUMBLE")) events.push("FUMBLE");
         if(up.includes("RECOVERED") && !up.includes("ONSIDE")) events.push("TURNOVER");
@@ -747,7 +706,6 @@
         if(up.includes("TAUNTING")) events.push("TAUNTING");
         if(up.includes("SHOTGUN") || up.includes("(SHOTGUN)")) events.push("SHOTGUN");
 
-        // 1ST DOWN FIX: Look for explicit string
         if(up.match(/\b1ST DOWN\b/)) events.push("1ST DOWN");
 
         const distMatch = up.match(/(\d+) (YD|YARD|YDS)/);
@@ -773,8 +731,6 @@
             }
         }
         
-        // AUTO-SPLIT LOGIC (Best Effort)
-        // If we found a TIMEOUT and text has "BUF", trigger "BUF TIMEOUT"
         events.forEach(e => {
             if(up.includes(hAbbr)) events.push(hAbbr + " " + e);
             if(up.includes(aAbbr)) events.push(aAbbr + " " + e);
@@ -841,15 +797,12 @@
 
             let cardsHtml = "";
             p.cards.forEach((c, cardIdx) => {
-                let isCardWinner = c.winLine.length > 0;
-                let cellsHtml = "";
                 let winInds = c.winLine;
 
+                let cellsHtml = "";
                 c.events.forEach((evt, idx) => {
                     let styleAttr = "";
                     let classes = "cell";
-                    // 12 is free space ONLY if mode != coverall, but data handles that.
-                    // Actually, data says "FREE" string.
                     let isFree = (evt === "FREE");
                     let unlocked = gameState.calls.includes(evt) || isFree; 
                     
@@ -879,12 +832,13 @@
                 cardsHtml += `<div class="single-card-wrap"><div class="bingo-grid-container" style="border-color:${tData.c}"><div class="card-label" style="background:${tData.c}">${label}</div><div class="grid">${cellsHtml}</div></div><div class="card-footer" style="background-color:${tData.c}; border-color:${tData.c}; color:white;"><span>REROLLS: ${c.rerolls}</span>${footerContent}</div></div>`;
             });
             
-            // Check if player has ANY winning card
             let anyWin = p.cards.some(c=>c.winLine.length>0);
             html += `<div class="player-zone ${anyWin?'winner':''} ${!isMe?'opponent':''}" style="border-color:${tData.c}"><div class="player-header"><div class="team-logo-wrap" style="border-color:${tData.c}"><img class="team-logo" src="logos/${tData.l}"></div><div class="player-name-wrap"><div class="player-name" style="background:${tData.c}">${p.name}</div></div></div><div class="cards-row">${cardsHtml}</div></div>`;
         });
         board.innerHTML = html;
-        document.getElementById('mode-label').innerText = gameState.mode;
+        let mLabel = gameState.mode;
+        if(gameState.targetLetter) mLabel += ` (${gameState.targetLetter})`;
+        document.getElementById('mode-label').innerText = mLabel;
     }
 
     window.cellClick = function(pid, cIdx, idx) {
@@ -894,7 +848,6 @@
 
         if(c.marked.includes(idx)) c.marked = c.marked.filter(x=>x!==idx); else c.marked.push(idx);
         
-        // CHECK WIN BASED ON MODE
         c.winLine = [];
         if(gameState.mode === 'CLASSIC') {
             for(let l of LINES) if(l.every(x => c.marked.includes(x) || c.events[x]==="FREE")) c.winLine = l;
@@ -917,10 +870,9 @@
         let p = gameState.players[myId];
         if(p.cards[cIdx].rerolls > 0 && confirm("Burn 1 Reroll?")) { 
             p.cards[cIdx].rerolls--; 
-            let nc = newCard(hostGameAbbrs); 
+            let nc = newCard(hostGameAbbrs, p.cards[cIdx].letter); // Pass existing letter so goal doesn't change
             p.cards[cIdx].events = nc.events; 
-            p.cards[cIdx].marked = nc.marked; // Reset marks on reroll
-            p.cards[cIdx].letter = nc.letter;
+            p.cards[cIdx].marked = nc.marked; 
             render(); send({ type: 'UPDATE', pData: p }); 
         }
     };
@@ -933,10 +885,10 @@
                     <h3>HOW TO PLAY</h3>
                     <ul style="text-align:left; font-size:0.8rem; padding-left:20px;">
                         <li><strong>MODE:</strong> ${gameState.mode}</li>
+                        ${gameState.targetLetter ? '<li><strong>TARGET:</strong> Letter '+gameState.targetLetter+'</li>' : ''}
                         <li><strong>LOCKOUT:</strong> Squares are LOCKED until the event appears in the Official Board.</li>
                     </ul>
                 </div><h3>EVENT ODDS</h3>`; 
-        // Need to flatten tiers for display
         for(let k in TIERS) {
             let items = TIERS[k].items.map(i => i.split ? i.t + " (Split)" : i.t);
             h += `<div class="tier-list"><div class="tier-head" style="background:${TIERS[k].color}"><span>${TIERS[k].label}</span></div><div class="tier-items">${items.join(", ")}</div></div>`; 
@@ -950,8 +902,8 @@
         gameState.calls = []; 
         Object.keys(gameState.players).forEach(pid => { 
             let p = gameState.players[pid]; 
-            // Regenerate cards respecting count and abbrs
-            gameState.players[pid] = createPlayerData(p.name, p.team, gameState.cardsPerPlayer, hostGameAbbrs); 
+            // Reuse existing letter/abbrs
+            gameState.players[pid] = createPlayerData(p.name, p.team, gameState.cardsPerPlayer, hostGameAbbrs, gameState.targetLetter); 
         }); 
         currentWinnerName = null; document.getElementById('winner-modal').style.display='none'; 
         render(); send({ type: 'STATE', state: gameState }); 
@@ -1033,9 +985,8 @@
                     if(msg.type === 'JOIN') { 
                         if(!gameState.players[msg.sender]) {
                             // GENERATE PLAYER ON HOST
-                            gameState.players[msg.sender] = createPlayerData(msg.name, msg.team, gameState.cardsPerPlayer, hostGameAbbrs); 
+                            gameState.players[msg.sender] = createPlayerData(msg.name, msg.team, gameState.cardsPerPlayer, hostGameAbbrs, gameState.targetLetter); 
                             render(); send({ type: 'STATE', state: gameState }); 
-                            // Broadcast Feed Message for Late Joiners
                             if(gameState.started) {
                                 let welcome = { type: 'FEED_ITEM', text: `${msg.name} HAS ENTERED THE GAME`, sys: true };
                                 send(welcome); addFeedItem(welcome);
@@ -1046,11 +997,7 @@
                     if(msg.type === 'UPDATE_TEAM') { if(gameState.players[msg.sender]) { gameState.players[msg.sender].team = msg.team; render(); } }
                 } else {
                     if(msg.type === 'STATE') {
-                        let local = gameState.players[myId]; 
                         gameState = msg.state;
-                        // Preserve local changes if state lagged? No, State is truth.
-                        // Actually, if we just clicked, we don't want old state overwriting marked.
-                        // But for simplicity, accept state.
                         render();
                     }
                 }
