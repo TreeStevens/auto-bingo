@@ -1,21 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
 <!-- 
-    NFL BEANO v22.2
-    - DATA: Restored CFL and Historic Teams.
-    - UI: Confetti now has randomized trajectories (scattered arcs) instead of a single line.
+    NFL BEANO v23.0
+    - FEATURE: "Letter X" Game Mode added.
+    - LOGIC: Enhanced First Down detection (Automatic 1st Downs + 10yd gains).
+    - UI: Host can select Win Condition in Lobby.
 -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NFL BEANO v22.2</title>
+    <title>NFL BEANO v23.0</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Titan+One&display=swap" rel="stylesheet">
 
     <style>
-        :root { --bg-color: #0f172a; --card-width: 340px; }
+        :root { --bg-color: #0f172a; --card-width: 360px; }
         * { box-sizing: border-box; }
-        body { margin: 0; padding: 0; background: var(--bg-color); color: white; font-family: 'Chakra Petch', sans-serif; overflow-x: hidden; transition: background-color 0.5s ease; padding-bottom: 120px; }
+        body { margin: 0; padding: 0; background: var(--bg-color); color: white; font-family: 'Chakra Petch', sans-serif; overflow-x: hidden; transition: background-color 0.5s ease; padding-bottom: 90px; }
 
         /* LOBBY */
         #lobby { position: fixed; inset: 0; z-index: 9999; background: rgba(15, 23, 42, 0.98); display: flex; justify-content: center; align-items: center; overflow-y: auto; }
@@ -25,7 +26,6 @@
         .tab-btn { flex: 1; padding: 8px; border: none; background: transparent; font-family: 'Titan One'; font-size: 1.1rem; cursor: pointer; color: #64748b; border-radius: 8px; }
         .tab-btn.active { background: white; color: #3b82f6; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .control-group { margin: 12px 0; text-align: left; }
-        .row-group { display: flex; gap: 10px; }
         label { display: block; font-weight: bold; margin-bottom: 4px; text-transform: uppercase; font-size: 0.7rem; color: #666; letter-spacing: 1px; }
         input, select { width: 100%; padding: 10px; border: 2px solid #cbd5e1; border-radius: 8px; font-size: 1rem; font-weight: bold; font-family: 'Chakra Petch', sans-serif; outline: none; }
         .lobby-btn { width: 100%; padding: 15px; font-size: 1.3rem; font-family: 'Titan One', cursive; border: none; border-radius: 10px; cursor: pointer; transition: transform 0.1s; margin-top: 10px; }
@@ -88,27 +88,10 @@
         .modal-content { background: white; padding: 30px; border-radius: 20px; width: 90%; max-width: 500px; text-align: center; color: #333; border: 5px solid #fff; max-height: 80vh; overflow-y: auto; }
         #winner-modal { display:none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #fff; padding: 40px; border-radius: 30px; box-shadow: 0 0 100px #fbbf24; text-align: center; z-index: 9000; border: 10px solid #fbbf24; animation: popIn 0.5s; }
         @keyframes popIn { from{transform:translate(-50%, -50%) scale(0.1);} to{transform:translate(-50%, -50%) scale(1);} }
-        
-        /* RANDOMIZED CONFETTI */
         #celebration { position: fixed; inset: 0; pointer-events: none; z-index: 99999; overflow: hidden; }
-        .confetti { position: absolute; opacity: 0; }
+        .confetti { position: absolute; animation: spinFly 6s linear infinite; }
         .football { font-size: 5rem; } .logo-confetti { width: 80px; height: 80px; object-fit: contain; }
-        
-        .confetti-left { left: 0; bottom: 0; animation: arcLeft 10s ease-out forwards; }
-        .confetti-right { right: 0; bottom: 0; animation: arcRight 10s ease-out forwards; }
-
-        /* Using CSS variables for randomization */
-        @keyframes arcLeft { 
-            0% { transform: translate(0, 0) rotate(0deg) scale(0.5); opacity: 1; }
-            40% { transform: translate(var(--mid-x), var(--mid-y)) rotate(180deg) scale(1); opacity: 1; }
-            100% { transform: translate(var(--end-x), var(--end-y)) rotate(720deg) scale(0.5); opacity: 0; }
-        }
-        @keyframes arcRight { 
-            0% { transform: translate(0, 0) rotate(0deg) scale(0.5); opacity: 1; }
-            40% { transform: translate(var(--mid-x), var(--mid-y)) rotate(-180deg) scale(1); opacity: 1; }
-            100% { transform: translate(var(--end-x), var(--end-y)) rotate(-720deg) scale(0.5); opacity: 0; }
-        }
-
+        @keyframes spinFly { from { transform: translate(-100px, 100vh) rotate(0deg); } to { transform: translate(120vw, -200px) rotate(720deg); } }
         .hidden { display: none !important; }
         .waiting-msg { width: 100%; text-align: center; margin-top: 100px; font-size: 1.5rem; opacity: 0.5; animation: pulse 2s infinite; }
         #error-banner { position: fixed; top:0; left:0; width:100%; background:red; color:white; text-align: center; padding: 10px; z-index: 10000; display: none; font-size: 0.8rem;}
@@ -127,7 +110,6 @@
     <div id="info-modal" class="modal-overlay">
         <div class="modal-content">
             <h2>OFFICIAL CALL LIST</h2>
-            <p style="font-size:0.8rem; color:#666; margin-bottom:15px;">Only these events can be auto-detected from the Game Feed.</p>
             <div id="info-list"></div>
             <button onclick="document.getElementById('info-modal').style.display='none'" style="width:100%; background:#333; color:white; padding:15px; border:none; border-radius:10px; margin-top:10px; cursor:pointer;">CLOSE</button>
         </div>
@@ -137,14 +119,14 @@
     <div id="lobby">
         <div class="lobby-card">
             <h1>NFL BEANO</h1>
-            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 22.2 &bull; IMPROVED</p>
+            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 23.0 &bull; THE X</p>
 
             <div class="lobby-tabs">
                 <button class="tab-btn active" id="tab-host" onclick="switchTab('host')">HOST</button>
                 <button class="tab-btn" id="tab-join" onclick="switchTab('join')">JOIN</button>
             </div>
 
-            <!-- SHARED INPUTS (Revealed based on flow) -->
+            <!-- SHARED INPUTS -->
             <div id="join-step-1" class="control-group" style="display:none;">
                  <label>Room Code (Ask Host)</label>
                  <input type="text" id="room-input-join" placeholder="4 LETTERS" style="text-transform:uppercase; text-align:center; font-size:1.5rem; letter-spacing:5px;">
@@ -170,38 +152,12 @@
 
                 <!-- GAME SETTINGS -->
                 <div id="host-settings" style="display:none;">
-                    <div class="row-group">
-                        <div class="control-group" style="flex:2;">
-                            <label>Game Mode</label>
-                            <select id="game-mode-select" onchange="checkMode()">
-                                <option value="CLASSIC" selected>CLASSIC (Line)</option>
-                                <option value="COVERALL">COVERALL (Full Card)</option>
-                                <option value="LETTERS">LETTERS (H, T, X...)</option>
-                            </select>
-                        </div>
-                        
-                        <!-- LETTER SUB-SELECT -->
-                        <div class="control-group" id="letter-group" style="flex:1; display:none;">
-                            <label>Letter</label>
-                            <select id="letter-select">
-                                <option value="RND">Rnd</option>
-                                <option value="H">H</option>
-                                <option value="T">T</option>
-                                <option value="X">X</option>
-                                <option value="N">N</option>
-                                <option value="Z">Z</option>
-                                <option value="O">O</option>
-                            </select>
-                        </div>
-
-                        <div class="control-group" style="flex:1;">
-                            <label>Cards</label>
-                            <select id="card-count-select">
-                                <option value="1">1</option>
-                                <option value="2">2</option>
-                                <option value="3" selected>3</option>
-                            </select>
-                        </div>
+                    <div class="control-group">
+                        <label>Game Mode</label>
+                        <select id="game-mode-select">
+                            <option value="CLASSIC" selected>CLASSIC (Line)</option>
+                            <option value="X">THE 'X' (Corners + Center)</option>
+                        </select>
                     </div>
                 </div>
 
@@ -213,12 +169,10 @@
                 <button id="action-btn" class="lobby-btn btn-host" onclick="initGame()">START GAME</button>
             </div>
 
-            <!-- MOVED CONNECTION HINT TO BOTTOM & NEUTRAL STYLING -->
             <details>
                 <summary>CONNECTION ISSUES?</summary>
-                <p>If the game feed isn't loading, please turn off AdBlockers or VPNs. The ESPN feed connection is often blocked by privacy tools.</p>
+                <p>If the game feed isn't loading, please turn off AdBlockers or VPNs.</p>
             </details>
-            
         </div>
     </div>
 
@@ -253,48 +207,14 @@
     <div id="celebration"></div>
 
 <script>
-    // DATASET
     const TIERS = {
-        common: { 
-            label: "COMMON", color: "#10b981", 
-            items: [
-                {t: "RUN 1-4 YDS"}, {t: "PASS 1-4 YDS"}, {t: "INC. PASS"}, 
-                {t: "PUNT", split:true}, {t: "KICKOFF"}, {t: "TOUCHBACK"}, 
-                {t: "TIMEOUT", split:true}, {t: "PENALTY FLAG"}, {t: "FALSE START"}, 
-                {t: "OFFSIDES"}, {t: "SACK", split:true}, {t: "RETURN 1-9 YDS"}
-            ] 
-        },
-        uncommon: { 
-            label: "UNCOMMON", color: "#f59e0b", 
-            items: [
-                {t: "RUN 5-9 YDS"}, {t: "PASS 5-9 YDS"}, {t: "RUN 10-19 YDS"}, {t: "PASS 10-19 YDS"}, 
-                {t: "RETURN 10-19 YDS"}, {t: "HOLDING"}, {t: "PASS INT"}, 
-                {t: "TOUCHDOWN", split:true}, {t: "FIELD GOAL", split:true}, 
-                {t: "INTERCEPTION", split:true}, {t: "FUMBLE"}, {t: "TURNOVER", split:true}, 
-                {t: "1ST DOWN"}, {t: "TFL 1-9 YDS"}, {t: "REVIEW"}, {t: "SHOTGUN"}
-            ] 
-        },
-        rare: { 
-            label: "RARE", color: "#ef4444", 
-            items: [
-                {t: "RUN 20+ YDS"}, {t: "PASS 20+ YDS"}, {t: "RETURN 20+ YDS"}, 
-                {t: "DEFENSIVE TD"}, {t: "SAFETY"}, {t: "BLOCKED KICK"}, 
-                {t: "MISSED FG", split:true}, {t: "INJURY"}, {t: "OVERTIME"}, 
-                {t: "TAUNTING"}, {t: "ROUGHING PASSER"}
-            ] 
-        }
+        common: { label: "COMMON (12)", color: "#10b981", items: ["RUN 1-4 YDS", "PASS 1-4 YDS", "INC. PASS", "PUNT", "KICKOFF", "TOUCHBACK", "TIMEOUT", "PENALTY FLAG", "FALSE START", "OFFSIDES", "SACK", "RETURN 1-9 YDS"] },
+        uncommon: { label: "UNCOMMON (8)", color: "#f59e0b", items: ["RUN 5-9 YDS", "PASS 5-9 YDS", "RUN 10-19 YDS", "PASS 10-19 YDS", "RETURN 10-19 YDS", "HOLDING", "PASS INT", "TOUCHDOWN", "FIELD GOAL", "INTERCEPTION", "FUMBLE", "TURNOVER", "4TH DOWN TRY", "1ST DOWN", "TFL 1-9 YDS", "REVIEW", "SHOTGUN"] },
+        rare: { label: "RARE (4)", color: "#ef4444", items: ["RUN 20+ YDS", "PASS 20+ YDS", "RETURN 20+ YDS", "DEFENSIVE TD", "SAFETY", "BLOCKED KICK", "MISSED FG", "INJURY", "OVERTIME", "TAUNTING", "ROUGHING PASSER"] }
     };
     
-    // PATTERN DEFINITIONS
     const LINES = [[0,1,2,3,4],[5,6,7,8,9],[10,11,12,13,14],[15,16,17,18,19],[20,21,22,23,24],[0,5,10,15,20],[1,6,11,16,21],[2,7,12,17,22],[3,8,13,18,23],[4,9,14,19,24],[0,6,12,18,24],[4,8,12,16,20]];
-    const LETTERS = {
-        'H': [0,5,10,15,20, 4,9,14,19,24, 11,12,13],
-        'T': [0,1,2,3,4, 2,7,12,17,22],
-        'X': [0,6,12,18,24, 4,8,16,20],
-        'N': [0,5,10,15,20, 6,12,18, 4,9,14,19,24],
-        'Z': [0,1,2,3,4, 8,12,16, 20,21,22,23,24],
-        'O': [0,1,2,3,4, 5,10,15,20, 4,9,14,19,24, 20,21,22,23,24]
-    };
+    const PATTERN_X = [0,4,6,8,12,16,18,20,24];
 
     const TEAMS = {
         "None": { n: "No Team", c: "#333", l: "nfl.svg" },
@@ -349,16 +269,16 @@
         "WAS": { n: "Washington Commanders", c: "#5A1414", l: "washington-commanders.svg" },
         "WPG": { n: "Winnipeg Blue Bombers", c: "#003594", l: "winnipeg-bluebombers.png" }
     };
-    
     const TEAM_IDS = { "22":"ARI", "1":"ATL", "33":"BAL", "2":"BUF", "29":"CAR", "3":"CHI", "4":"CIN", "5":"CLE", "6":"DAL", "7":"DEN", "8":"DET", "9":"GB", "34":"HOU", "11":"IND", "30":"JAX", "12":"KC", "13":"LV", "24":"LAC", "14":"LAR", "15":"MIA", "16":"MIN", "17":"NE", "18":"NO", "19":"NYG", "20":"NYJ", "21":"PHI", "23":"PIT", "25":"SF", "26":"SEA", "27":"TB", "10":"TEN", "28":"WAS" };
+
     const BROKER = 'wss://broker.emqx.io:8084/mqtt';
-    const TOPIC_PRE = 'nfl_beano_v22_2';
+    const TOPIC_PRE = 'nfl_beano_v23_0';
 
     let client, myId = 'p' + Math.random().toString(36).substr(2,6);
     let myName, myTeam, roomCode, isHost = true; 
     let focusMode = false;
     let currentWinnerName = null;
-    let gameState = { players: {}, calls: [], activeGameIds: [], mode: 'CLASSIC', started: false, targetLetter: null }; 
+    let gameState = { players: {}, calls: [], activeGameIds: [], mode: 'CLASSIC' }; 
     let myGameId = null;
     let hostGameAbbrs = { h: "HOME", a: "AWAY" }; 
     let processedPlays = {}; 
@@ -419,13 +339,6 @@
         };
         switchTab('host');
     });
-
-    // Toggle Letter Dropdown
-    window.checkMode = function() {
-        const m = document.getElementById('game-mode-select').value;
-        const sub = document.getElementById('letter-group');
-        sub.style.display = (m === 'LETTERS') ? 'block' : 'none';
-    };
 
     window.joinNext = function() {
         const code = document.getElementById('room-input-join').value.trim().toUpperCase();
@@ -505,26 +418,12 @@
             roomCode = document.getElementById('room-input').value;
             gameState.activeGameIds = [myGameId];
             gameState.mode = document.getElementById('game-mode-select').value;
-            gameState.cardsPerPlayer = parseInt(document.getElementById('card-count-select').value);
-            
-            if(gameState.mode === 'LETTERS') {
-                let picked = document.getElementById('letter-select').value;
-                if(picked === 'RND') {
-                    const keys = Object.keys(LETTERS);
-                    picked = keys[Math.floor(Math.random() * keys.length)];
-                }
-                gameState.targetLetter = picked;
-            } else {
-                gameState.targetLetter = null;
-            }
-
-            gameState.started = true;
         } else {
             roomCode = document.getElementById('room-input').value;
         }
 
         if(isHost) {
-            gameState.players[myId] = createPlayerData(myName, myTeam, gameState.cardsPerPlayer, hostGameAbbrs, gameState.targetLetter);
+            gameState.players[myId] = createPlayerData(myName, myTeam, hostGameAbbrs);
         }
 
         document.getElementById('lobby').classList.add('hidden');
@@ -544,26 +443,16 @@
         render(); 
     }
 
-    function createPlayerData(name, team, count, abbrs, fixedLetter) { 
-        let cards = [];
-        for(let i=0; i<count; i++) cards.push(newCard(abbrs, fixedLetter));
-        return { name: name, team: team, cards: cards }; 
+    function createPlayerData(name, team, abbrs) { 
+        return { name: name, team: team, cards: [newCard(abbrs)] }; 
     }
 
-    function newCard(abbrs, fixedLetter) {
-        let isCoverall = (gameState.mode === 'COVERALL');
-        
+    function newCard(abbrs) {
         let pool = [];
         const processTier = (tierItems, limit) => {
             let options = [];
             tierItems.forEach(item => {
-                if(item.split && abbrs) {
-                    options.push(abbrs.h + " " + item.t);
-                    options.push(abbrs.a + " " + item.t);
-                    options.push(item.t);
-                } else {
-                    options.push(item.t);
-                }
+                 options.push(item.t || item); // Handle plain strings from TIERS object
             });
             options = options.sort(() => Math.random() - 0.5);
             return options.slice(0, limit);
@@ -576,16 +465,9 @@
         ];
         
         pool = pool.sort(() => Math.random() - 0.5);
+        pool.splice(12, 0, "FREE");
 
-        if(!isCoverall) {
-            pool.splice(12, 0, "FREE");
-        } else {
-            let extra = TIERS.common.items[Math.floor(Math.random()*TIERS.common.items.length)].t;
-            pool.splice(12, 0, extra);
-        }
-
-        let letter = fixedLetter || null;
-        return { events: pool, marked: (!isCoverall ? [12] : []), winLine: [], rerolls: 3, letter: letter };
+        return { events: pool, marked: [12], winLine: [], rerolls: 2 };
     }
 
     function startHostLoop() {
@@ -717,7 +599,8 @@
         if(up.includes("TAUNTING")) events.push("TAUNTING");
         if(up.includes("SHOTGUN") || up.includes("(SHOTGUN)")) events.push("SHOTGUN");
 
-        if(up.match(/\b1ST DOWN\b/)) events.push("1ST DOWN");
+        // NEW FIRST DOWN LOGIC
+        if(up.match(/\b1ST DOWN\b/) || up.includes("AUTOMATIC FIRST DOWN")) events.push("1ST DOWN");
 
         const distMatch = up.match(/(\d+) (YD|YARD|YDS)/);
         if(distMatch) {
@@ -725,15 +608,20 @@
             const isPass = up.includes("PASS") || up.includes("COMPLETE") || up.includes("THROWN");
             const isKick = up.includes("KICK") || up.includes("PUNT");
             
+            // AUTO FIRST DOWN ON 10+ YARDS
+            if(yds >= 10 && !isKick && !up.includes("PENALTY")) events.push("1ST DOWN");
+
             if(yds >= 1 && yds <= 4 && !isPass && !isKick) events.push("RUN 1-4 YDS");
             if(yds >= 5 && yds <= 9 && !isPass && !isKick) events.push("RUN 5-9 YDS");
             if(yds >= 10 && yds <= 19 && !isPass && !isKick) events.push("RUN 10-19 YDS");
-            if(yds >= 20 && !isPass && !isKick) events.push("RUN 20+ YDS");
+            if(yds >= 20 && yds <= 39 && !isPass && !isKick) events.push("RUN 20-39 YDS");
+            if(yds >= 40 && !isPass && !isKick) events.push("RUN 40+ YDS");
             
             if(yds >= 1 && yds <= 4 && isPass) events.push("PASS 1-4 YDS");
             if(yds >= 5 && yds <= 9 && isPass) events.push("PASS 5-9 YDS");
             if(yds >= 10 && yds <= 19 && isPass) events.push("PASS 10-19 YDS");
-            if(yds >= 20 && isPass) events.push("PASS 20+ YDS");
+            if(yds >= 20 && yds <= 39 && isPass) events.push("PASS 20-39 YDS");
+            if(yds >= 40 && isPass) events.push("PASS 40+ YDS");
 
             if(isKick && (up.includes("RETURN") || !up.includes("TOUCHBACK"))) {
                 if(yds >= 1 && yds <= 9) events.push("RETURN 1-9 YDS");
@@ -741,12 +629,6 @@
                 if(yds >= 20) events.push("RETURN 20+ YDS");
             }
         }
-        
-        events.forEach(e => {
-            if(up.includes(hAbbr)) events.push(hAbbr + " " + e);
-            if(up.includes(aAbbr)) events.push(aAbbr + " " + e);
-        });
-
         return events;
     }
 
@@ -760,9 +642,7 @@
         const div = document.createElement('div');
         div.className = 'live-item';
         
-        if(msg.sys) {
-             div.className += ' sys'; div.innerText = msg.text;
-        } else if(msg.hunt) { 
+        if(msg.hunt) { 
             div.className += ' hunt'; div.innerText = msg.text; 
         } else {
             const l1 = (TEAMS[msg.t1] && TEAMS[msg.t1].l) ? TEAMS[msg.t1].l : 'nfl.svg';
@@ -802,53 +682,49 @@
         let html = "";
         pIds.forEach(pid => {
             if(focusMode && pid !== myId) return;
-            const p = gameState.players[pid]; const tData = TEAMS[p.team] || TEAMS["None"]; const isMe = (pid === myId);
+            const p = gameState.players[pid]; const tData = TEAMS[p.team] || TEAMS["None"]; const isMe = (pid === myId); const isWinner = p.cards.some(c => c.winLine.length > 0);
             
             if(!p.cards || p.cards.length === 0) return; 
 
-            let cardsHtml = "";
-            p.cards.forEach((c, cardIdx) => {
-                let winInds = c.winLine;
+            let c = p.cards[0]; 
+            let cellsHtml = "";
 
-                let cellsHtml = "";
-                c.events.forEach((evt, idx) => {
-                    let styleAttr = "";
-                    let classes = "cell";
-                    let isFree = (evt === "FREE");
-                    let unlocked = gameState.calls.includes(evt) || isFree; 
-                    
-                    if(unlocked) classes += " unlocked";
-                    if(isFree) { classes += " free"; styleAttr = `style="background-color:${tData.c} !important;"`; }
-                    else if(c.marked.includes(idx)) { styleAttr = `style="background-color:${tData.c} !important; color:white !important; text-shadow:0 1px 2px rgba(0,0,0,0.8);"`; }
-                    
-                    if(winInds.includes(idx)) {
-                        classes += " win";
-                        styleAttr = `style="background-color:#fbbf24 !important; color:black !important; text-shadow:none !important;"`;
-                    }
-                    
-                    let content = evt;
-                    if(isFree) content = `<div style="background:white; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; margin:0 auto; box-shadow:0 2px 5px rgba(0,0,0,0.3);"><img src="logos/${tData.l}" style="width:28px; height:28px; object-fit:contain;"></div>`;
-                    
-                    let click = (isMe && unlocked && !isFree) ? `onclick="cellClick('${pid}', ${cardIdx}, ${idx})"` : "";
-                    cellsHtml += `<div class="${classes}" ${styleAttr} ${click}>${content}</div>`;
-                });
+            c.events.forEach((evt, idx) => {
+                let styleAttr = "";
+                let classes = "cell";
+                let isFree = (evt === "FREE");
+                let unlocked = gameState.calls.includes(evt) || isFree; 
                 
-                let footerContent = "";
-                if(isMe) footerContent = `<button class="btn-card-action btn-use" ${c.rerolls<=0?'disabled':''} onclick="reroll('${pid}', ${cardIdx})">USE</button>`;
-                else footerContent = `<span style="opacity:0.6; font-size:0.8rem; color:white;">REROLLS: ${c.rerolls}</span>`;
-
-                let label = `CARD ${cardIdx+1}`;
-                if(c.letter) label += ` [${c.letter}]`;
-
-                cardsHtml += `<div class="single-card-wrap"><div class="bingo-grid-container" style="border-color:${tData.c}"><div class="card-label" style="background:${tData.c}">${label}</div><div class="grid">${cellsHtml}</div></div><div class="card-footer" style="background-color:${tData.c}; border-color:${tData.c}; color:white;"><span>REROLLS: ${c.rerolls}</span>${footerContent}</div></div>`;
+                if(unlocked) classes += " unlocked";
+                if(isFree) { classes += " free"; styleAttr = `style="background-color:${tData.c} !important;"`; }
+                else if(c.marked.includes(idx)) { styleAttr = `style="background-color:${tData.c} !important; color:white !important; text-shadow:0 1px 2px rgba(0,0,0,0.8);"`; }
+                
+                if(c.winLine.includes(idx)) {
+                    classes += " win";
+                    styleAttr = `style="background-color:#fbbf24 !important; color:black !important; text-shadow:none !important;"`;
+                }
+                
+                let content = evt;
+                if(isFree) content = `<div style="background:white; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; margin:0 auto; box-shadow:0 2px 5px rgba(0,0,0,0.3);"><img src="logos/${tData.l}" style="width:28px; height:28px; object-fit:contain;"></div>`;
+                
+                let click = (isMe && unlocked && !isFree) ? `onclick="cellClick('${pid}', 0, ${idx})"` : "";
+                cellsHtml += `<div class="${classes}" ${styleAttr} ${click}>${content}</div>`;
             });
+            
+            let footerContent = "";
+            if(isMe) footerContent = `<button class="btn-card-action btn-use" ${c.rerolls<=0?'disabled':''} onclick="reroll('${pid}', 0)">USE</button>`;
+            else footerContent = `<span style="opacity:0.6; font-size:0.8rem; color:white;">REROLLS: ${c.rerolls}</span>`;
+
+            let label = `CARD 1`;
+            if(gameState.mode === 'X') label = `THE 'X' MODE`;
+
+            let cardsHtml = `<div class="single-card-wrap"><div class="bingo-grid-container" style="border-color:${tData.c}"><div class="card-label" style="background:${tData.c}">${label}</div><div class="grid">${cellsHtml}</div></div><div class="card-footer" style="background-color:${tData.c}; border-color:${tData.c}; color:white;"><span>REROLLS: ${c.rerolls}</span>${footerContent}</div></div>`;
             
             let anyWin = p.cards.some(c=>c.winLine.length>0);
             html += `<div class="player-zone ${anyWin?'winner':''} ${!isMe?'opponent':''}" style="border-color:${tData.c}"><div class="player-header"><div class="team-logo-wrap" style="border-color:${tData.c}"><img class="team-logo" src="logos/${tData.l}"></div><div class="player-name-wrap"><div class="player-name" style="background:${tData.c}">${p.name}</div></div></div><div class="cards-row">${cardsHtml}</div></div>`;
         });
         board.innerHTML = html;
         let mLabel = gameState.mode;
-        if(gameState.targetLetter) mLabel += ` (${gameState.targetLetter})`;
         document.getElementById('mode-label').innerText = mLabel;
     }
 
@@ -861,12 +737,9 @@
         
         c.winLine = [];
         if(gameState.mode === 'CLASSIC') {
-            for(let l of LINES) if(l.every(x => c.marked.includes(x) || c.events[x]==="FREE")) c.winLine = l;
-        } else if(gameState.mode === 'COVERALL') {
-            if(c.marked.length === 25) c.winLine = Array.from({length:25},(_,i)=>i);
-        } else if(gameState.mode === 'LETTERS' && c.letter) {
-            let required = LETTERS[c.letter];
-            if(required && required.every(x => c.marked.includes(x) || c.events[x]==="FREE")) c.winLine = required;
+            for(let l of WINS) if(l.every(x => c.marked.includes(x) || c.events[x]==="FREE")) c.winLine = l;
+        } else if(gameState.mode === 'X') {
+            if(PATTERN_X.every(x => c.marked.includes(x) || c.events[x]==="FREE")) c.winLine = PATTERN_X;
         }
         
         if(c.winLine.length > 0) {
@@ -881,7 +754,7 @@
         let p = gameState.players[myId];
         if(p.cards[cIdx].rerolls > 0 && confirm("Burn 1 Reroll?")) { 
             p.cards[cIdx].rerolls--; 
-            let nc = newCard(hostGameAbbrs, p.cards[cIdx].letter); 
+            let nc = newCard(hostGameAbbrs); 
             p.cards[cIdx].events = nc.events; 
             p.cards[cIdx].marked = nc.marked; 
             render(); send({ type: 'UPDATE', pData: p }); 
@@ -896,12 +769,11 @@
                     <h3>HOW TO PLAY</h3>
                     <ul style="text-align:left; font-size:0.8rem; padding-left:20px;">
                         <li><strong>MODE:</strong> ${gameState.mode}</li>
-                        ${gameState.targetLetter ? '<li><strong>TARGET:</strong> Letter '+gameState.targetLetter+'</li>' : ''}
                         <li><strong>LOCKOUT:</strong> Squares are LOCKED until the event appears in the Official Board.</li>
                     </ul>
                 </div><h3>EVENT ODDS</h3>`; 
         for(let k in TIERS) {
-            let items = TIERS[k].items.map(i => i.split ? i.t + " (Split)" : i.t);
+            let items = TIERS[k].items.map(i => i);
             h += `<div class="tier-list"><div class="tier-head" style="background:${TIERS[k].color}"><span>${TIERS[k].label}</span></div><div class="tier-items">${items.join(", ")}</div></div>`; 
         }
         document.getElementById('info-list').innerHTML = h; document.getElementById('info-modal').style.display='flex'; 
@@ -913,8 +785,7 @@
         gameState.calls = []; 
         Object.keys(gameState.players).forEach(pid => { 
             let p = gameState.players[pid]; 
-            // Reuse existing letter/abbrs
-            gameState.players[pid] = createPlayerData(p.name, p.team, gameState.cardsPerPlayer, hostGameAbbrs, gameState.targetLetter); 
+            gameState.players[pid] = createPlayerData(p.name, p.team, hostGameAbbrs); 
         }); 
         currentWinnerName = null; document.getElementById('winner-modal').style.display='none'; 
         render(); send({ type: 'STATE', state: gameState }); 
@@ -946,8 +817,6 @@
             f.innerHTML='🏈'; 
             f.style.fontSize=(Math.random()*3+3)+'rem'; 
             
-            // RANDOM TRAJECTORY
-            // Mid: 20-50vw, -60 to -90vh
             let mx = 20 + Math.random()*30;
             let my = -60 - Math.random()*30;
             let ex = 60 + Math.random()*40;
@@ -969,7 +838,6 @@
                 l.className = 'confetti logo-confetti confetti-right';
                 l.src = logoSrc;
                 
-                // Mirror logic
                 let mx = -20 - Math.random()*30;
                 let my = -60 - Math.random()*30;
                 let ex = -60 - Math.random()*40;
@@ -1027,13 +895,8 @@
                 if(isHost) {
                     if(msg.type === 'JOIN') { 
                         if(!gameState.players[msg.sender]) {
-                            // GENERATE PLAYER ON HOST
-                            gameState.players[msg.sender] = createPlayerData(msg.name, msg.team, gameState.cardsPerPlayer, hostGameAbbrs, gameState.targetLetter); 
+                            gameState.players[msg.sender] = createPlayerData(msg.name, msg.team, hostGameAbbrs); 
                             render(); send({ type: 'STATE', state: gameState }); 
-                            if(gameState.started) {
-                                let welcome = { type: 'FEED_ITEM', text: `${msg.name} HAS ENTERED THE GAME`, sys: true };
-                                send(welcome); addFeedItem(welcome);
-                            }
                         }
                     }
                     if(msg.type === 'UPDATE') { gameState.players[msg.sender] = msg.pData; checkGlobalWin(); render(); send({ type: 'STATE', state: gameState }); }
