@@ -2,9 +2,9 @@
 <html lang="en">
 <!-- 
     NFL BEANO v23.0
-    - FEATURE: "Letter X" Game Mode added.
-    - LOGIC: Enhanced First Down detection (Automatic 1st Downs + 10yd gains).
-    - UI: Host can select Win Condition in Lobby.
+    - FEATURE: Kick Player. Host sees "X" button on opponent cards.
+    - LOGIC: Added 'KICKED' message type to MQTT to force-reload the victim.
+    - CORE: Retains all v22.2 logic (Replay, Hive Mind, Confetti, etc).
 -->
 <head>
     <meta charset="UTF-8">
@@ -26,6 +26,7 @@
         .tab-btn { flex: 1; padding: 8px; border: none; background: transparent; font-family: 'Titan One'; font-size: 1.1rem; cursor: pointer; color: #64748b; border-radius: 8px; }
         .tab-btn.active { background: white; color: #3b82f6; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .control-group { margin: 12px 0; text-align: left; }
+        .row-group { display: flex; gap: 10px; }
         label { display: block; font-weight: bold; margin-bottom: 4px; text-transform: uppercase; font-size: 0.7rem; color: #666; letter-spacing: 1px; }
         input, select { width: 100%; padding: 10px; border: 2px solid #cbd5e1; border-radius: 8px; font-size: 1rem; font-weight: bold; font-family: 'Chakra Petch', sans-serif; outline: none; }
         .lobby-btn { width: 100%; padding: 15px; font-size: 1.3rem; font-family: 'Titan One', cursive; border: none; border-radius: 10px; cursor: pointer; transition: transform 0.1s; margin-top: 10px; }
@@ -82,6 +83,17 @@
         .btn-card-action { width: auto; min-width: 90px; color: #333; border: 2px solid white; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-family: 'Titan One'; font-size: 0.9rem; text-transform: uppercase; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
         .btn-use { color: #d946ef; } .btn-use:disabled { background: #ccc; color: #666; cursor: default; }
 
+        /* KICK BUTTON */
+        .btn-kick {
+            position: absolute; top: 10px; right: 10px;
+            background: #ef4444; color: white; border: 2px solid white;
+            width: 30px; height: 30px; border-radius: 50%;
+            font-weight: bold; cursor: pointer; z-index: 20;
+            display: flex; align-items: center; justify-content: center;
+            font-family: Arial, sans-serif;
+        }
+        .btn-kick:hover { background: #b91c1c; }
+
         #footer-controls { position: fixed; bottom: 15px; left: 50%; transform: translateX(-50%); background: white; padding: 8px 20px; border-radius: 50px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; gap: 10px; width: 90%; max-width: 600px; justify-content: space-between; z-index: 1000; }
         .btn-footer { padding: 6px 14px; font-size: 0.9rem; border-radius: 20px; background: #64748b; color: white; border: none; font-weight: 800; font-family: 'Chakra Petch'; cursor: pointer; }
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 7000; display: none; justify-content: center; align-items: center; }
@@ -119,7 +131,7 @@
     <div id="lobby">
         <div class="lobby-card">
             <h1>NFL BEANO</h1>
-            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 23.0 &bull; THE X</p>
+            <p style="color:#94a3b8; font-weight:bold; font-size: 0.8rem; margin-bottom: 20px;">VERSION 23.0 &bull; KICK BUTTON</p>
 
             <div class="lobby-tabs">
                 <button class="tab-btn active" id="tab-host" onclick="switchTab('host')">HOST</button>
@@ -152,12 +164,37 @@
 
                 <!-- GAME SETTINGS -->
                 <div id="host-settings" style="display:none;">
-                    <div class="control-group">
-                        <label>Game Mode</label>
-                        <select id="game-mode-select">
-                            <option value="CLASSIC" selected>CLASSIC (Line)</option>
-                            <option value="X">THE 'X' (Corners + Center)</option>
-                        </select>
+                    <div class="row-group">
+                        <div class="control-group" style="flex:2;">
+                            <label>Game Mode</label>
+                            <select id="game-mode-select" onchange="checkMode()">
+                                <option value="CLASSIC" selected>CLASSIC (Line)</option>
+                                <option value="COVERALL">COVERALL (Full Card)</option>
+                                <option value="LETTERS">LETTERS (H, T, X...)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="control-group" id="letter-group" style="flex:1; display:none;">
+                            <label>Letter</label>
+                            <select id="letter-select">
+                                <option value="RND">Rnd</option>
+                                <option value="H">H</option>
+                                <option value="T">T</option>
+                                <option value="X">X</option>
+                                <option value="N">N</option>
+                                <option value="Z">Z</option>
+                                <option value="O">O</option>
+                            </select>
+                        </div>
+
+                        <div class="control-group" style="flex:1;">
+                            <label>Cards</label>
+                            <select id="card-count-select">
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3" selected>3</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
@@ -171,8 +208,9 @@
 
             <details>
                 <summary>CONNECTION ISSUES?</summary>
-                <p>If the game feed isn't loading, please turn off AdBlockers or VPNs.</p>
+                <p>If the game feed isn't loading, please turn off AdBlockers or VPNs. The ESPN feed connection is often blocked by privacy tools.</p>
             </details>
+            
         </div>
     </div>
 
@@ -207,14 +245,48 @@
     <div id="celebration"></div>
 
 <script>
+    // DATASET
     const TIERS = {
-        common: { label: "COMMON (12)", color: "#10b981", items: ["RUN 1-4 YDS", "PASS 1-4 YDS", "INC. PASS", "PUNT", "KICKOFF", "TOUCHBACK", "TIMEOUT", "PENALTY FLAG", "FALSE START", "OFFSIDES", "SACK", "RETURN 1-9 YDS"] },
-        uncommon: { label: "UNCOMMON (8)", color: "#f59e0b", items: ["RUN 5-9 YDS", "PASS 5-9 YDS", "RUN 10-19 YDS", "PASS 10-19 YDS", "RETURN 10-19 YDS", "HOLDING", "PASS INT", "TOUCHDOWN", "FIELD GOAL", "INTERCEPTION", "FUMBLE", "TURNOVER", "4TH DOWN TRY", "1ST DOWN", "TFL 1-9 YDS", "REVIEW", "SHOTGUN"] },
-        rare: { label: "RARE (4)", color: "#ef4444", items: ["RUN 20+ YDS", "PASS 20+ YDS", "RETURN 20+ YDS", "DEFENSIVE TD", "SAFETY", "BLOCKED KICK", "MISSED FG", "INJURY", "OVERTIME", "TAUNTING", "ROUGHING PASSER"] }
+        common: { 
+            label: "COMMON", color: "#10b981", 
+            items: [
+                {t: "RUN 1-4 YDS"}, {t: "PASS 1-4 YDS"}, {t: "INC. PASS"}, 
+                {t: "PUNT", split:true}, {t: "KICKOFF"}, {t: "TOUCHBACK"}, 
+                {t: "TIMEOUT", split:true}, {t: "PENALTY FLAG"}, {t: "FALSE START"}, 
+                {t: "OFFSIDES"}, {t: "SACK", split:true}, {t: "RETURN 1-9 YDS"}
+            ] 
+        },
+        uncommon: { 
+            label: "UNCOMMON", color: "#f59e0b", 
+            items: [
+                {t: "RUN 5-9 YDS"}, {t: "PASS 5-9 YDS"}, {t: "RUN 10-19 YDS"}, {t: "PASS 10-19 YDS"}, 
+                {t: "RETURN 10-19 YDS"}, {t: "HOLDING"}, {t: "PASS INT"}, 
+                {t: "TOUCHDOWN", split:true}, {t: "FIELD GOAL", split:true}, 
+                {t: "INTERCEPTION", split:true}, {t: "FUMBLE"}, {t: "TURNOVER", split:true}, 
+                {t: "1ST DOWN"}, {t: "TFL 1-9 YDS"}, {t: "REVIEW"}, {t: "SHOTGUN"}
+            ] 
+        },
+        rare: { 
+            label: "RARE", color: "#ef4444", 
+            items: [
+                {t: "RUN 20+ YDS"}, {t: "PASS 20+ YDS"}, {t: "RETURN 20+ YDS"}, 
+                {t: "DEFENSIVE TD"}, {t: "SAFETY"}, {t: "BLOCKED KICK"}, 
+                {t: "MISSED FG", split:true}, {t: "INJURY"}, {t: "OVERTIME"}, 
+                {t: "TAUNTING"}, {t: "ROUGHING PASSER"}
+            ] 
+        }
     };
     
+    // PATTERN DEFINITIONS
     const LINES = [[0,1,2,3,4],[5,6,7,8,9],[10,11,12,13,14],[15,16,17,18,19],[20,21,22,23,24],[0,5,10,15,20],[1,6,11,16,21],[2,7,12,17,22],[3,8,13,18,23],[4,9,14,19,24],[0,6,12,18,24],[4,8,12,16,20]];
-    const PATTERN_X = [0,4,6,8,12,16,18,20,24];
+    const LETTERS = {
+        'H': [0,5,10,15,20, 4,9,14,19,24, 11,12,13],
+        'T': [0,1,2,3,4, 2,7,12,17,22],
+        'X': [0,6,12,18,24, 4,8,16,20],
+        'N': [0,5,10,15,20, 6,12,18, 4,9,14,19,24],
+        'Z': [0,1,2,3,4, 8,12,16, 20,21,22,23,24],
+        'O': [0,1,2,3,4, 5,10,15,20, 4,9,14,19,24, 20,21,22,23,24]
+    };
 
     const TEAMS = {
         "None": { n: "No Team", c: "#333", l: "nfl.svg" },
@@ -269,8 +341,8 @@
         "WAS": { n: "Washington Commanders", c: "#5A1414", l: "washington-commanders.svg" },
         "WPG": { n: "Winnipeg Blue Bombers", c: "#003594", l: "winnipeg-bluebombers.png" }
     };
+    
     const TEAM_IDS = { "22":"ARI", "1":"ATL", "33":"BAL", "2":"BUF", "29":"CAR", "3":"CHI", "4":"CIN", "5":"CLE", "6":"DAL", "7":"DEN", "8":"DET", "9":"GB", "34":"HOU", "11":"IND", "30":"JAX", "12":"KC", "13":"LV", "24":"LAC", "14":"LAR", "15":"MIA", "16":"MIN", "17":"NE", "18":"NO", "19":"NYG", "20":"NYJ", "21":"PHI", "23":"PIT", "25":"SF", "26":"SEA", "27":"TB", "10":"TEN", "28":"WAS" };
-
     const BROKER = 'wss://broker.emqx.io:8084/mqtt';
     const TOPIC_PRE = 'nfl_beano_v23_0';
 
@@ -278,7 +350,7 @@
     let myName, myTeam, roomCode, isHost = true; 
     let focusMode = false;
     let currentWinnerName = null;
-    let gameState = { players: {}, calls: [], activeGameIds: [], mode: 'CLASSIC' }; 
+    let gameState = { players: {}, calls: [], activeGameIds: [], mode: 'CLASSIC', started: false, targetLetter: null }; 
     let myGameId = null;
     let hostGameAbbrs = { h: "HOME", a: "AWAY" }; 
     let processedPlays = {}; 
@@ -339,6 +411,12 @@
         };
         switchTab('host');
     });
+
+    window.checkMode = function() {
+        const m = document.getElementById('game-mode-select').value;
+        const sub = document.getElementById('letter-group');
+        sub.style.display = (m === 'LETTERS') ? 'block' : 'none';
+    };
 
     window.joinNext = function() {
         const code = document.getElementById('room-input-join').value.trim().toUpperCase();
@@ -418,12 +496,26 @@
             roomCode = document.getElementById('room-input').value;
             gameState.activeGameIds = [myGameId];
             gameState.mode = document.getElementById('game-mode-select').value;
+            gameState.cardsPerPlayer = parseInt(document.getElementById('card-count-select').value);
+            
+            if(gameState.mode === 'LETTERS') {
+                let picked = document.getElementById('letter-select').value;
+                if(picked === 'RND') {
+                    const keys = Object.keys(LETTERS);
+                    picked = keys[Math.floor(Math.random() * keys.length)];
+                }
+                gameState.targetLetter = picked;
+            } else {
+                gameState.targetLetter = null;
+            }
+
+            gameState.started = true;
         } else {
             roomCode = document.getElementById('room-input').value;
         }
 
         if(isHost) {
-            gameState.players[myId] = createPlayerData(myName, myTeam, hostGameAbbrs);
+            gameState.players[myId] = createPlayerData(myName, myTeam, gameState.cardsPerPlayer, hostGameAbbrs, gameState.targetLetter);
         }
 
         document.getElementById('lobby').classList.add('hidden');
@@ -443,16 +535,26 @@
         render(); 
     }
 
-    function createPlayerData(name, team, abbrs) { 
-        return { name: name, team: team, cards: [newCard(abbrs)] }; 
+    function createPlayerData(name, team, count, abbrs, fixedLetter) { 
+        let cards = [];
+        for(let i=0; i<count; i++) cards.push(newCard(abbrs, fixedLetter));
+        return { name: name, team: team, cards: cards }; 
     }
 
-    function newCard(abbrs) {
+    function newCard(abbrs, fixedLetter) {
+        let isCoverall = (gameState.mode === 'COVERALL');
+        
         let pool = [];
         const processTier = (tierItems, limit) => {
             let options = [];
             tierItems.forEach(item => {
-                 options.push(item.t || item); // Handle plain strings from TIERS object
+                if(item.split && abbrs) {
+                    options.push(abbrs.h + " " + item.t);
+                    options.push(abbrs.a + " " + item.t);
+                    options.push(item.t);
+                } else {
+                    options.push(item.t);
+                }
             });
             options = options.sort(() => Math.random() - 0.5);
             return options.slice(0, limit);
@@ -465,9 +567,16 @@
         ];
         
         pool = pool.sort(() => Math.random() - 0.5);
-        pool.splice(12, 0, "FREE");
 
-        return { events: pool, marked: [12], winLine: [], rerolls: 2 };
+        if(!isCoverall) {
+            pool.splice(12, 0, "FREE");
+        } else {
+            let extra = TIERS.common.items[Math.floor(Math.random()*TIERS.common.items.length)].t;
+            pool.splice(12, 0, extra);
+        }
+
+        let letter = fixedLetter || null;
+        return { events: pool, marked: (!isCoverall ? [12] : []), winLine: [], rerolls: 3, letter: letter };
     }
 
     function startHostLoop() {
@@ -599,7 +708,6 @@
         if(up.includes("TAUNTING")) events.push("TAUNTING");
         if(up.includes("SHOTGUN") || up.includes("(SHOTGUN)")) events.push("SHOTGUN");
 
-        // NEW FIRST DOWN LOGIC
         if(up.match(/\b1ST DOWN\b/) || up.includes("AUTOMATIC FIRST DOWN")) events.push("1ST DOWN");
 
         const distMatch = up.match(/(\d+) (YD|YARD|YDS)/);
@@ -608,9 +716,6 @@
             const isPass = up.includes("PASS") || up.includes("COMPLETE") || up.includes("THROWN");
             const isKick = up.includes("KICK") || up.includes("PUNT");
             
-            // AUTO FIRST DOWN ON 10+ YARDS
-            if(yds >= 10 && !isKick && !up.includes("PENALTY")) events.push("1ST DOWN");
-
             if(yds >= 1 && yds <= 4 && !isPass && !isKick) events.push("RUN 1-4 YDS");
             if(yds >= 5 && yds <= 9 && !isPass && !isKick) events.push("RUN 5-9 YDS");
             if(yds >= 10 && yds <= 19 && !isPass && !isKick) events.push("RUN 10-19 YDS");
@@ -629,6 +734,12 @@
                 if(yds >= 20) events.push("RETURN 20+ YDS");
             }
         }
+        
+        events.forEach(e => {
+            if(up.includes(hAbbr)) events.push(hAbbr + " " + e);
+            if(up.includes(aAbbr)) events.push(aAbbr + " " + e);
+        });
+
         return events;
     }
 
@@ -713,10 +824,11 @@
             
             let footerContent = "";
             if(isMe) footerContent = `<button class="btn-card-action btn-use" ${c.rerolls<=0?'disabled':''} onclick="reroll('${pid}', 0)">USE</button>`;
-            else footerContent = `<span style="opacity:0.6; font-size:0.8rem; color:white;">REROLLS: ${c.rerolls}</span>`;
+            else footerContent = `<button class="btn-card-action btn-taunt" onclick="startTaunt('${pid}')">KICK</button>`; // RESTORED KICK BUTTON
 
             let label = `CARD 1`;
             if(gameState.mode === 'X') label = `THE 'X' MODE`;
+            if(gameState.mode === 'LETTERS' && c.letter) label = `LETTER: ${c.letter}`;
 
             let cardsHtml = `<div class="single-card-wrap"><div class="bingo-grid-container" style="border-color:${tData.c}"><div class="card-label" style="background:${tData.c}">${label}</div><div class="grid">${cellsHtml}</div></div><div class="card-footer" style="background-color:${tData.c}; border-color:${tData.c}; color:white;"><span>REROLLS: ${c.rerolls}</span>${footerContent}</div></div>`;
             
@@ -725,6 +837,7 @@
         });
         board.innerHTML = html;
         let mLabel = gameState.mode;
+        if(gameState.targetLetter) mLabel += ` (${gameState.targetLetter})`;
         document.getElementById('mode-label').innerText = mLabel;
     }
 
@@ -737,7 +850,12 @@
         
         c.winLine = [];
         if(gameState.mode === 'CLASSIC') {
-            for(let l of WINS) if(l.every(x => c.marked.includes(x) || c.events[x]==="FREE")) c.winLine = l;
+            for(let l of LINES) if(l.every(x => c.marked.includes(x) || c.events[x]==="FREE")) c.winLine = l;
+        } else if(gameState.mode === 'COVERALL') {
+            if(c.marked.length === 25) c.winLine = Array.from({length:25},(_,i)=>i);
+        } else if(gameState.mode === 'LETTERS' && c.letter) {
+            let required = LETTERS[c.letter];
+            if(required && required.every(x => c.marked.includes(x) || c.events[x]==="FREE")) c.winLine = required;
         } else if(gameState.mode === 'X') {
             if(PATTERN_X.every(x => c.marked.includes(x) || c.events[x]==="FREE")) c.winLine = PATTERN_X;
         }
@@ -754,10 +872,21 @@
         let p = gameState.players[myId];
         if(p.cards[cIdx].rerolls > 0 && confirm("Burn 1 Reroll?")) { 
             p.cards[cIdx].rerolls--; 
-            let nc = newCard(hostGameAbbrs); 
+            let nc = newCard(hostGameAbbrs, p.cards[cIdx].letter); 
             p.cards[cIdx].events = nc.events; 
             p.cards[cIdx].marked = nc.marked; 
             render(); send({ type: 'UPDATE', pData: p }); 
+        }
+    };
+    
+    // KICK FUNCTION
+    window.startTaunt = function(targetId) {
+        if(!isHost) return;
+        if(confirm("Kick " + gameState.players[targetId].name + "?")) {
+            send({ type: 'KICKED', target: targetId });
+            delete gameState.players[targetId];
+            send({ type: 'STATE', state: gameState });
+            render();
         }
     };
 
@@ -769,11 +898,12 @@
                     <h3>HOW TO PLAY</h3>
                     <ul style="text-align:left; font-size:0.8rem; padding-left:20px;">
                         <li><strong>MODE:</strong> ${gameState.mode}</li>
+                        ${gameState.targetLetter ? '<li><strong>TARGET:</strong> Letter '+gameState.targetLetter+'</li>' : ''}
                         <li><strong>LOCKOUT:</strong> Squares are LOCKED until the event appears in the Official Board.</li>
                     </ul>
                 </div><h3>EVENT ODDS</h3>`; 
         for(let k in TIERS) {
-            let items = TIERS[k].items.map(i => i);
+            let items = TIERS[k].items.map(i => i.split ? i.t + " (Split)" : i.t);
             h += `<div class="tier-list"><div class="tier-head" style="background:${TIERS[k].color}"><span>${TIERS[k].label}</span></div><div class="tier-items">${items.join(", ")}</div></div>`; 
         }
         document.getElementById('info-list').innerHTML = h; document.getElementById('info-modal').style.display='flex'; 
@@ -785,7 +915,8 @@
         gameState.calls = []; 
         Object.keys(gameState.players).forEach(pid => { 
             let p = gameState.players[pid]; 
-            gameState.players[pid] = createPlayerData(p.name, p.team, hostGameAbbrs); 
+            // Reuse existing letter/abbrs
+            gameState.players[pid] = createPlayerData(p.name, p.team, gameState.cardsPerPlayer, hostGameAbbrs, gameState.targetLetter); 
         }); 
         currentWinnerName = null; document.getElementById('winner-modal').style.display='none'; 
         render(); send({ type: 'STATE', state: gameState }); 
@@ -817,6 +948,8 @@
             f.innerHTML='🏈'; 
             f.style.fontSize=(Math.random()*3+3)+'rem'; 
             
+            // RANDOM TRAJECTORY
+            // Mid: 20-50vw, -60 to -90vh
             let mx = 20 + Math.random()*30;
             let my = -60 - Math.random()*30;
             let ex = 60 + Math.random()*40;
@@ -838,6 +971,7 @@
                 l.className = 'confetti logo-confetti confetti-right';
                 l.src = logoSrc;
                 
+                // Mirror logic
                 let mx = -20 - Math.random()*30;
                 let my = -60 - Math.random()*30;
                 let ex = -60 - Math.random()*40;
@@ -889,14 +1023,24 @@
                     celebrate(msg.name);
                     return;
                 }
+                // KICK HANDLER
+                if(msg.type === 'KICKED' && msg.target === myId) {
+                    alert("You have been kicked by the Host.");
+                    location.reload();
+                }
 
                 if(msg.sender === myId) return;
 
                 if(isHost) {
                     if(msg.type === 'JOIN') { 
                         if(!gameState.players[msg.sender]) {
-                            gameState.players[msg.sender] = createPlayerData(msg.name, msg.team, hostGameAbbrs); 
+                            // GENERATE PLAYER ON HOST
+                            gameState.players[msg.sender] = createPlayerData(msg.name, msg.team, gameState.cardsPerPlayer, hostGameAbbrs, gameState.targetLetter); 
                             render(); send({ type: 'STATE', state: gameState }); 
+                            if(gameState.started) {
+                                let welcome = { type: 'FEED_ITEM', text: `${msg.name} HAS ENTERED THE GAME`, sys: true };
+                                send(welcome); addFeedItem(welcome);
+                            }
                         }
                     }
                     if(msg.type === 'UPDATE') { gameState.players[msg.sender] = msg.pData; checkGlobalWin(); render(); send({ type: 'STATE', state: gameState }); }
